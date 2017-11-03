@@ -1,4 +1,4 @@
-﻿module ChatServer.Replica
+﻿module ChatServer.Acceptor
 
 open Akka.FSharp
 open Akka.Actor
@@ -11,23 +11,23 @@ type State = {
     beatmap: Map<string,IActorRef*int64>
 }
 
-type ReplicaMessage =
+type AcceptorMessage =
     | Join of IActorRef
     | JoinMaster of IActorRef
     | Heartbeat of string * IActorRef * int64
     | Alive of int64 * string
-    | Request of string * string
-    | Decision of string
+    | P1A of int64
+    | P2A of int64 * int64 * Command
     | Get
     | Leave of IActorRef
 
-let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
+let room selfID beatrate aliveThreshold (mailbox: Actor<AcceptorMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
 
         match msg with
-        | ReplicaMessage.Join ref ->
+        | Join ref ->
             mailbox.Context.System.Scheduler.ScheduleTellRepeatedly(System.TimeSpan.FromMilliseconds 0.,
                                             System.TimeSpan.FromMilliseconds beatrate,
                                             ref,

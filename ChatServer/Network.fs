@@ -4,7 +4,7 @@ open System.Text
 open System.Net
 open Akka.FSharp
 open Akka.IO
-open World
+open Types
 open System.Diagnostics
 
 type Server =

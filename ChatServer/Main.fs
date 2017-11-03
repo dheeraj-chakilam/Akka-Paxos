@@ -1,7 +1,7 @@
 ﻿module ChatServer.Main
 
 open Akka.FSharp
-open World
+open Replica
 open Network
 
 let beatrate = 10.
