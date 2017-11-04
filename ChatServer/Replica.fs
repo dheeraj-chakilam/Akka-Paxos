@@ -16,8 +16,8 @@ type ReplicaMessage =
     | JoinMaster of IActorRef
     | Heartbeat of string * IActorRef * int64
     | Alive of int64 * string
-    | Request of string * string
-    | Decision of string
+    | Request of Command
+    | Decision of int64 * Command
     | Get
     | Leave of IActorRef
 
@@ -27,7 +27,7 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
         let sender = mailbox.Sender()
 
         match msg with
-        | ReplicaMessage.Join ref ->
+        | Join ref ->
             mailbox.Context.System.Scheduler.ScheduleTellRepeatedly(System.TimeSpan.FromMilliseconds 0.,
                                             System.TimeSpan.FromMilliseconds beatrate,
                                             ref,
