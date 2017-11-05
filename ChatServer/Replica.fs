@@ -7,7 +7,8 @@ open Types
 type State = {
     chatlog: string list
     slotNum: int64
-    proposals: List<int64 * Command>
+    proposals: Map<int64, Command>
+    decisions: Map<int64, Command>
     leaders: Set<IActorRef>
     master: IActorRef option
     messages: List<string*string>
@@ -23,6 +24,21 @@ type ReplicaMessage =
     | Decision of int64 * Command
     | Get
     | Leave of IActorRef
+
+let propose command state =
+    let rec findGap state i =
+        if Map.containsKey i state.proposals or Map.containsKey i state.decisions then
+            findGap state i + 1L
+        else
+            i
+    if Map.exists (fun _ c -> c = command) state.decisions then
+        let newSlot = findGap state 0L
+        let proposals' = Map.add newSlot command state.proposals
+        let (id, op) = command
+        Set.iter (fun r -> r <! sprintf "propose %i %s %s" newSlot id op) state.leaders
+        { state with proposals = proposals' }
+    else
+        state
 
 let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
@@ -59,9 +75,6 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
 
             return! loop state
 
-        | Rebroadcast text ->
-            return! loop { state with messages = text :: state.messages }
-
         | Get ->
             match state.master with
             | Some m -> m <! (sprintf "messages %s" (System.String.Join(",",List.rev state.messages)))
@@ -70,6 +83,19 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
             return! loop state
 
         | Leave ref ->
-            return! loop { state with actors = Set.remove ref state.actors }
+            return! loop { state with leaders = Set.remove ref state.leaders }
+
+        | Request command->
+            // On Request, Propose
+            propose c
     }
-    loop { leaders = Set.empty ; master = None ; messages = []; beatmap = Map.empty }
+    loop {
+        leaders = Set.empty ;
+        master = None ;
+        messages = [];
+        beatmap = Map.empty;
+        proposals = Map.empty;
+        decisions = Map.empty;
+        chatlog = []
+        slotNum = 0L
+    }
