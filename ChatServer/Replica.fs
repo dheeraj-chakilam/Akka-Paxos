@@ -5,6 +5,9 @@ open Akka.Actor
 open Types
 
 type State = {
+    chatlog: string list
+    slotNum: int64
+    proposals: List<int64 * Command>
     leaders: Set<IActorRef>
     master: IActorRef option
     messages: List<string*string>
@@ -55,12 +58,6 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
             | None -> ()
 
             return! loop state
-
-        | Broadcast text -> 
-            state.actors
-            |> Set.iter (fun a -> a <! (sprintf "rebroadcast %s" text))
-            
-            return! loop { state with messages = text :: state.messages }
 
         | Rebroadcast text ->
             return! loop { state with messages = text :: state.messages }
