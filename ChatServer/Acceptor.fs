@@ -23,16 +23,6 @@ type AcceptorMessage =
     | Get
     | Leave of IActorRef
 
-// TODO CODECHECK   
-// Return true if first is a larger ballot_value than the second
-let compareBallots b1 b2 =
-    match b1, b2 with
-    | (ballotVal1, leaderId1), (ballotVal2, leaderId2) -> 
-        if (ballotVal1 > ballotVal2) then true
-        else if (ballotVal2 > ballotVal1) then false
-        else if (leaderId1 > leaderId2) then true
-        else false
-
 let room selfID beatrate aliveThreshold (mailbox: Actor<AcceptorMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
@@ -67,28 +57,12 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<AcceptorMessage>) =
             | None -> ()
 
             return! loop state
-
-        | Broadcast text -> 
-            state.actors
-            |> Set.iter (fun a -> a <! (sprintf "rebroadcast %s" text))
-            
-            return! loop { state with messages = text :: state.messages }
-
-        | Rebroadcast text ->
-            return! loop { state with messages = text :: state.messages }
-
-        | Get ->
-            match state.master with
-            | Some m -> m <! (sprintf "messages %s" (System.String.Join(",",List.rev state.messages)))
-            | None -> ()
-            
-            return! loop state
         
         // TODO CODECHECK   
-        | P1A ballotNum -> 
+        | P1A b -> 
             let state' = 
-                if (compareBallots ballotNum state.ballotNumber) then 
-                    { state with state.ballotNumber = b }
+                if (b %> state.ballotNumber) then 
+                    { state with ballotNumber = b }
                 else
                     state
                     // TODO: FIX Pvalue-printing
@@ -97,21 +71,17 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<AcceptorMessage>) =
                 
         // TODO CODECHECK   
         | P2A pval ->
-            match pval with
-            | (b, s, c) ->            
-                let state' = 
-                    if (compareBallots b state.ballotNumber) then
-                        { state with state.ballotNumber = b; state.accepted = Set.add (state.ballotNumber, s, c) accepted }
-                    else
-                        { state with state.ballotNumber = b; state.accepted = Set.add (b, s, c) accepted }
-                let (ballot_num, leaderId) = state'.ballotNumber
-                 // TODO: Check print statement
-                sender <! (sprintf "p2b %i %i %i" ballot_num leaderId s)
-                return! loop state'
+            let (b, s, c) = pval
+            let state' = 
+                if (b %> state.ballotNumber || b = state.ballotNumber) then
+                    { state with ballotNumber = b; accepted = Set.add (b, s, c) state.accepted }
+                else
+                    state
+            let (ballot_num, leaderId) = state'.ballotNumber
+                // TODO: Check print statement
+            sender <! (sprintf "p2b %i %i %i" ballot_num leaderId s)
+            return! loop state'
              
             | _ -> failwith "Incorrect P2A format"
-
-        | Leave ref ->
-            return! loop { state with actors = Set.remove ref state.actors }
     }
-    loop { leaders = Set.empty ; master = None ; messages = []; beatmap = Map.empty; ballotNumber = (-1L, -1); accepted = Set.empty }
+    loop { leaders = Set.empty ; master = None ; messages = []; beatmap = Map.empty; ballotNumber = (-1L, -1L); accepted = Set.empty }

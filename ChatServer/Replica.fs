@@ -5,13 +5,12 @@ open Akka.Actor
 open Types
 
 type State = {
-    chatlog: string list
     slotNum: int64
     proposals: Map<int64, Command>
     decisions: Map<int64, Command>
     leaders: Set<IActorRef>
     master: IActorRef option
-    messages: List<string*string>
+    messages: List<Command>
     beatmap: Map<string,IActorRef*int64>
 }
 
@@ -27,11 +26,11 @@ type ReplicaMessage =
 
 let propose command state =
     let rec findGap state i =
-        if Map.containsKey i state.proposals or Map.containsKey i state.decisions then
+        if (Map.containsKey i state.proposals) || (Map.containsKey i state.decisions) then
             findGap state i + 1L
         else
             i
-    if Map.exists (fun _ c -> c = command) state.decisions then
+    if not (Map.exists (fun _ c -> c = command) state.decisions) then
         let newSlot = findGap state 0L
         let proposals' = Map.add newSlot command state.proposals
         let (id, op) = command
@@ -108,29 +107,23 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
             let rec performPossibleCommands st = 
                 let commandInDecision = 
                     st.decisions
-                    |> Map.filter (fun s _ -> s < st.slotNum) 
-                    |> Map.exists (fun _ c -> c = command) 
+                    |> Map.containsKey st.slotNum
                 
                 if not commandInDecision then
                     st
-             
                 else
-                    let commandInProposal = 
+                    let commandInProposal =
                         st.proposals
-                        |> Map.filter (fun s _ -> s < st.slotNum) 
-                        |> Map.exists (fun _ c -> c = command) 
+                        |> Map.containsKey st.slotNum
                     
-                    // We ensure that a re-proposal was not already decided
+                    // We ensure on re-proposal that the decision was not our proposal
                     let st' = 
-                        if commandInProposal then 
-                            let (id1, msg1) = Map.find slot st.decisions
-                            let (id2, msg2) = Map.find slot st.proposals
+                        let c1 = Map.find st.slotNum st.decisions
+                        let c2 = Map.find st.slotNum st.proposals
                       
-                            if (id1 <> id2 || msg1 <> msg2) then
-                                propose command st
-                            else
-                                st
-                        else 
+                        if commandInProposal && c1 <> c2 then
+                            propose c2 st
+                        else
                             st
                     let st'' = perform command st'
                     performPossibleCommands st''
@@ -147,6 +140,5 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
         beatmap = Map.empty;
         proposals = Map.empty;
         decisions = Map.empty;
-        chatlog = []
         slotNum = 0L
     }
