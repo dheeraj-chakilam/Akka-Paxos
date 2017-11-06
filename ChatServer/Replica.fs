@@ -40,6 +40,19 @@ let propose command state =
     else
         state
 
+let perform command state = 
+    let prevPerform = 
+        state.decisions
+        |> Map.filter (fun s _ -> s < state.slotNum)
+        |> Map.exists (fun _ c -> command = c)
+
+    if prevPerform then
+        { state with slotNum = state.slotNum + 1L }
+    else 
+        { state with
+                slotNum = state.slotNum + 1L ;
+                messages = command :: state.messages }
+
 let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
@@ -87,8 +100,46 @@ let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
 
         | Request command->
             // On Request, Propose
-            propose c
+            let state' = propose command state
+            return! loop state'
+        
+        | Decision (slot, command) ->         
+            // Recursive function to Perform all possible commands (until gap)
+            let rec performPossibleCommands st = 
+                let commandInDecision = 
+                    st.decisions
+                    |> Map.filter (fun s _ -> s < st.slotNum) 
+                    |> Map.exists (fun _ c -> c = command) 
+                
+                if not commandInDecision then
+                    st
+             
+                else
+                    let commandInProposal = 
+                        st.proposals
+                        |> Map.filter (fun s _ -> s < st.slotNum) 
+                        |> Map.exists (fun _ c -> c = command) 
+                    
+                    // We ensure that a re-proposal was not already decided
+                    let st' = 
+                        if commandInProposal then 
+                            let (id1, msg1) = Map.find slot st.decisions
+                            let (id2, msg2) = Map.find slot st.proposals
+                      
+                            if (id1 <> id2 || msg1 <> msg2) then
+                                propose command st
+                            else
+                                st
+                        else 
+                            st
+                    let st'' = perform command st'
+                    performPossibleCommands st''
+            
+            let state' = { state with decisions = Map.add slot command state.decisions }
+            let state'' = performPossibleCommands state'
+            return! loop state''
     }
+
     loop {
         leaders = Set.empty ;
         master = None ;
