@@ -23,9 +23,9 @@ let main argv =
     match argv with
     | [|id; n; port|] ->
         let system = System.create "system" config
-        let replicaRef = spawn system "replica" (replica id beatrate)
         let acceptorRef = spawn system "acceptor" (acceptor id)
-        let leaderRef = spawn system "leader" (leader id)
+        let leaderRef = spawn system "leader" (leader (int64 id) (int n) acceptorRef)
+        let replicaRef = spawn system "replica" (replica id leaderRef beatrate)
         let serverRef = spawn system "server" (server replicaRef acceptorRef leaderRef ChatServer (20000 + int id) (int id) (int n))
         let mServerRef = spawn system "master-server" (server replicaRef acceptorRef leaderRef MasterServer (int port) (int id) (int n))
         ()

@@ -50,7 +50,7 @@ let perform command state =
                 slotNum = state.slotNum + 1L ;
                 messages = command :: state.messages }
 
-let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
+let replica selfID selfLeader beatrate (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
