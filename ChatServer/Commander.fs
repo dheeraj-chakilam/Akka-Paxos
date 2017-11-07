@@ -7,30 +7,26 @@ open Types
 type State = {
     acceptors: Set<IActorRef>
     ballotNumber: BallotNumber
-    waitfor: Set<IActorRef>
     slotNum: int64
     command: Command
+    waitfor: Set<IActorRef>
     proposals: Map<int64, Command>
     decisions: Map<int64, Command>
-    leaders: Set<IActorRef>
-    master: IActorRef option
-    messages: List<Command>
+    /// The leader who spawned this commander
+    leader: IActorRef
     beatmap: Map<string,IActorRef*int64>
 }
 
-type ScoutMessage =
+type CommanderMessage =
     | Join of IActorRef
-    | JoinMaster of IActorRef
     | Heartbeat of string * IActorRef * int64
-    | Alive of int64 * string
     | Request of Command
     | Decision of int64 * Command
-    | Get
     | Leave of IActorRef
-    /// P2b (Acceptor's Ref, BallotNumber)
+    /// P2b (Acceptor's ref, BallotNumber)
     | P2b of IActorRef * BallotNumber
 
-let room selfID beatrate aliveThreshold acceptors ballotNumber slotNumber command (mailbox: Actor<ScoutMessage>) =
+let room selfID beatrate leader acceptors ballotNumber slotNumber command (mailbox: Actor<CommanderMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -42,38 +38,14 @@ let room selfID beatrate aliveThreshold acceptors ballotNumber slotNumber comman
                                             ref,
                                             sprintf "heartbeat %s" selfID)
             
-            return! loop { state with leaders = Set.add ref state.leaders }
-
-        | JoinMaster ref ->
-            return! loop { state with master = Some ref }
+            return! loop { state with acceptors = Set.add ref state.acceptors }
 
         | Heartbeat (id, ref, ms) ->
             printfn "heartbeat %s" id
             return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
 
-        | Alive (currMs, selfID) ->
-            match state.master with
-            | Some m -> 
-                let aliveList =
-                    state.beatmap
-                    |> Map.filter (fun _ (_, ms) -> currMs - ms < aliveThreshold)
-                    |> Map.add selfID (Unchecked.defaultof<_>, Unchecked.defaultof<_>)
-                    |> Map.toList
-                    |> List.map (fun (id,_) -> id)
-                m <! (sprintf "alive %s" (System.String.Join(",",aliveList)))
-            | None -> ()
-
-            return! loop state
-
-        | Get ->
-            match state.master with
-            | Some m -> m <! (sprintf "messages %s" (System.String.Join(",",List.rev state.messages)))
-            | None -> ()
-            
-            return! loop state
-
         | Leave ref ->
-            return! loop { state with leaders = Set.remove ref state.leaders }
+            return! loop { state with acceptors = Set.remove ref state.acceptors }
         
         | P2b (ref, b) -> 
             // Is returned ballot greater than the one we sent
@@ -94,16 +66,14 @@ let room selfID beatrate aliveThreshold acceptors ballotNumber slotNumber comman
     }
 
     let state = {
-        leaders = Set.empty ;
-        master = None ;
-        messages = [];
+        leader = leader;
         beatmap = Map.empty;
         proposals = Map.empty;
         decisions = Map.empty;
-        acceptors = acceptors
-        waitfor = acceptors
-        ballotNumber = ballotNumber
-        slotNum = slotNumber
+        acceptors = acceptors;
+        waitfor = acceptors;
+        ballotNumber = ballotNumber;
+        slotNum = slotNumber;
         command = command
     }
 

@@ -2,6 +2,8 @@
 
 open Akka.FSharp
 open Replica
+open Acceptor
+open Leader
 open Network
 
 let beatrate = 10.
@@ -21,9 +23,11 @@ let main argv =
     match argv with
     | [|id; n; port|] ->
         let system = System.create "system" config
-        let replicaRef = spawn system "room" (replica id)
-        let serverRef = spawn system "server" (server roomRef ChatServer (20000 + int id) (int id) (int n))
-        let mServerRef = spawn system "master-server" (server roomRef MasterServer (int port) (int id) (int n))
+        let replicaRef = spawn system "replica" (replica id beatrate)
+        let acceptorRef = spawn system "acceptor" (acceptor id)
+        let leaderRef = spawn system "leader" (leader id)
+        let serverRef = spawn system "server" (server replicaRef acceptorRef leaderRef ChatServer (20000 + int id) (int id) (int n))
+        let mServerRef = spawn system "master-server" (server replicaRef acceptorRef leaderRef MasterServer (int port) (int id) (int n))
         ()
 
     | _ -> printfn "Incorrect arguments (%A)" argv

@@ -4,8 +4,11 @@ open System.Text
 open System.Net
 open Akka.FSharp
 open Akka.IO
-open Types
 open System.Diagnostics
+
+open Acceptor
+open Replica
+open Leader
 
 type Server =
     | ChatServer
@@ -28,30 +31,18 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                 let data = line.Split([|' '|], 2)
 
                 match data with
-                | [| "broadcast"; message |] ->
-                    world <! Broadcast (message.Trim())
-
-                | [| "rebroadcast"; message |] ->
-                    world <! Rebroadcast (message.Trim())
-            
                 | [| "heartbeat"; message |] ->
-                    world <! Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
+                    replica <! Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
 
                 | [| "quit" |] ->
-                    world <! Leave mailbox.Self
+                    replica <! Leave mailbox.Self
                     mailbox.Context.Stop mailbox.Self
-            
-                | [| "alive" |] ->
-                    world <! Alive (sw.ElapsedMilliseconds, string selfID)
-            
-                | [| "get" |] ->
-                    world <! Get
             
                 | _ ->
                     connection <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)) lines
     
         | :? Tcp.ConnectionClosed as closed ->
-            world <! Leave mailbox.Self
+            replica <! Leave mailbox.Self
             mailbox.Context.Stop mailbox.Self
 
         | :? string as response ->
@@ -64,11 +55,10 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
 
     match serverType with
     | ChatServer ->
-        replica <! Join mailbox.Self
-        acceptor <! Join mailbox.Self
-        leader <! Join mailbox.Self
+        replica <! ReplicaMessage.Join mailbox.Self
+        leader <! LeaderMessage.Join mailbox.Self
     | MasterServer ->
-        replica <! JoinMaster mailbox.Self
+        replica <! ReplicaMessage.JoinMaster mailbox.Self
     
     loop connection
 

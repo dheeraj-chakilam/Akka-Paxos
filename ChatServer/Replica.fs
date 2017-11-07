@@ -18,11 +18,9 @@ type ReplicaMessage =
     | Join of IActorRef
     | JoinMaster of IActorRef
     | Heartbeat of string * IActorRef * int64
-    | Alive of int64 * string
     | Request of Command
     /// Decision (Slot, Command)
     | Decision of int64 * Command
-    | Get
     | Leave of IActorRef
 
 let propose command state =
@@ -53,7 +51,7 @@ let perform command state =
                 slotNum = state.slotNum + 1L ;
                 messages = command :: state.messages }
 
-let replica selfID (mailbox: Actor<ReplicaMessage>) =
+let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -73,27 +71,6 @@ let replica selfID (mailbox: Actor<ReplicaMessage>) =
         | Heartbeat (id, ref, ms) ->
             printfn "heartbeat %s" id
             return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
-
-        | Alive (currMs, selfID) ->
-            match state.master with
-            | Some m -> 
-                let aliveList =
-                    state.beatmap
-                    |> Map.filter (fun _ (_, ms) -> currMs - ms < aliveThreshold)
-                    |> Map.add selfID (Unchecked.defaultof<_>, Unchecked.defaultof<_>)
-                    |> Map.toList
-                    |> List.map (fun (id,_) -> id)
-                m <! (sprintf "alive %s" (System.String.Join(",",aliveList)))
-            | None -> ()
-
-            return! loop state
-
-        | Get ->
-            match state.master with
-            | Some m -> m <! (sprintf "messages %s" (System.String.Join(",",List.rev state.messages)))
-            | None -> ()
-            
-            return! loop state
 
         | Leave ref ->
             return! loop { state with leaders = Set.remove ref state.leaders }
