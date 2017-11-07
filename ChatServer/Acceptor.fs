@@ -27,7 +27,12 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                 else
                     state
             // TODO: FIX Pvalue-printing
-            scoutRef <! (sprintf "p1b")
+            let acceptedString =
+                state.accepted
+                |> Set.toSeq
+                |> Seq.map (fun pval -> sprintf "%i,%i,%i,%i,%s" pval.ballot.round pval.ballot.leaderID pval.slot pval.command.id pval.command.message)
+                |> String.concat "|"
+            scoutRef <! (sprintf "p1b ballot %i %i pvalues %s" state'.ballotNumber.round state'.ballotNumber.leaderID acceptedString)
             return! loop state'
                 
         // TODO CODECHECK   

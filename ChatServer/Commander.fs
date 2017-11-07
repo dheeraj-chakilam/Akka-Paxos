@@ -29,24 +29,20 @@ let commander selfID n leader replicas acceptors ballotNumber slotNumber command
         | P2b (ref, b) -> 
             // Is returned ballot greater than the one we sent
             if (b %> state.ballotNumber) then
-                ()
-                // TODO SEND PREEMPT TO LEADER:  <! (sprintf "Preempted")
+                state.leader <! LeaderMessage.Preempted b
                 return! loop state
             else
                 let state = 
                     if (state.waitfor.Contains(ref)) then
                         let waitfor = Set.remove ref state.waitfor
                         if (waitfor.Count * 2) < n then
-                            () //TODO SEND DELIVER MESSAGE TO LEADER
+                            Set.iter (fun r -> r <! Decid
                         { state with waitfor = waitfor }
                     else
                         state
                 return! loop state
     }
-
-
-    //TODO: FIX NETWORK PRINT FOR COMMANDER (Need to use ballot, slot, command)
-    Set.iter (fun r -> r <! sprintf "p2a") acceptors
+    Set.iter (fun r -> r <! sprintf "p2a %i %i %i %i %s" ballotNumber.round ballotNumber.leaderID slotNumber command.id command.message) acceptors
 
     loop {
         leader = leader

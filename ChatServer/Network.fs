@@ -9,6 +9,7 @@ open System.Diagnostics
 open Acceptor
 open Replica
 open Leader
+open Types
 
 type Server =
     | ChatServer
@@ -28,16 +29,59 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
             //In case we receive multiple messages (delimited by a newline) in the same Tcp.Received message
             let lines = (Encoding.ASCII.GetString (received.Data.ToArray())).Trim().Split([|'\n'|])
             Array.iter (fun (line:string) ->
-                let data = line.Split([|' '|], 2)
+                let data = line.Split([|' '|])
 
                 match data with
                 | [| "heartbeat"; message |] ->
-                    replica <! Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
+                    replica <! ReplicaMessage.Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
+                    leader <! LeaderMessage.Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
 
                 | [| "quit" |] ->
-                    replica <! Leave mailbox.Self
+                    replica <! ReplicaMessage.Leave mailbox.Self
+                    leader <! LeaderMessage.Leave mailbox.Self
                     mailbox.Context.Stop mailbox.Self
+
+                | [| "msg"; messageID; message |] ->
+                    replica <! Request { id = int64 messageID ; message = message }
+                
+                | [| "get"; "chatLog" |] ->
+                    replica <! Get
             
+                | [| "propose"; slot ; cid ; commandMessage |] ->
+                    leader <! Propose (mailbox.Self, int64 slot, { id = int64 cid ; message = commandMessage })
+                
+                | [| "p1a" ; br ; blid |] ->
+                    acceptor <! P1A (mailbox.Self, { round = int64 br; leaderID = int64 blid } )
+
+                | [| "p1b" ; "ballot" ; br ; blid ; "pvalues" ; acceptedString |] ->
+                    let pvalues =
+                        acceptedString.Trim().Split([|'|'|])
+                        |> Array.fold (fun state pvalString ->
+                            match pvalString.Split([|','|]) with
+                            | [| ballotRound; ballotLeaderID; slot; commandId; commandMessage |] ->
+                                let pval = 
+                                    {
+                                        ballot = { round = int64 ballotRound ; leaderID = int64 ballotLeaderID }
+                                        slot = int64 slot
+                                        command = { id = int64 commandId ; message = commandMessage }
+                                    }
+                                Set.add pval state
+                            | _ -> state) Set.empty
+                    leader <! P1b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, pvalues )
+                
+                 | [| "p2a" ; br ; blid ; slot ; commandId ; commandMessage |] ->
+                    let pval = 
+                        { 
+                            ballot = { round = int64 br; leaderID = int64 blid }
+                            slot = int64 slot
+                            command = { id = int64 commandId ; message = commandMessage }
+                        }
+                    acceptor <! P2A (mailbox.Self, pval)
+                
+                | [| "p2b" ;  br ; blid ; slot |] -> 
+                    leader <! P2b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, int64 slot )
+
+                
                 | _ ->
                     connection <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)) lines
     

@@ -8,6 +8,7 @@ type State = {
     slotNum: int64
     proposals: Map<int64, Command>
     decisions: Map<int64, Command>
+    selfLeader: IActorRef
     leaders: Set<IActorRef>
     master: IActorRef option
     messages: List<Command>
@@ -18,6 +19,7 @@ type ReplicaMessage =
     | Join of IActorRef
     | JoinMaster of IActorRef
     | Heartbeat of string * IActorRef * int64
+    | Get
     | Request of Command
     /// Decision (Slot, Command)
     | Decision of int64 * Command
@@ -33,6 +35,7 @@ let propose command state =
         let newSlot = findGap state 0L
         let proposals' = Map.add newSlot command state.proposals
         Set.iter (fun r -> r <! sprintf "propose %i %i %s" newSlot command.id command.message) state.leaders
+        state.selfLeader <! LeaderMessage.Propose 
         { state with proposals = proposals' }
     else
         state
@@ -45,7 +48,10 @@ let perform command state =
 
     if prevPerform then
         { state with slotNum = state.slotNum + 1L }
-    else 
+    else
+        match state.master with
+        | Some m -> m <! sprintf "ack %i %i" command.id (List.length state.messages)
+        | None -> ()
         { state with
                 slotNum = state.slotNum + 1L ;
                 messages = command :: state.messages }
@@ -73,6 +79,13 @@ let replica selfID selfLeader beatrate (mailbox: Actor<ReplicaMessage>) =
 
         | Leave ref ->
             return! loop { state with leaders = Set.remove ref state.leaders }
+
+        | Get ->
+            match state.master with
+            | Some m -> m <! (sprintf "chatLog %s" (System.String.Join(",",List.rev state.messages)))
+            | None -> ()
+
+            return! loop state
 
         | Request command->
             // On Request, Propose
@@ -111,6 +124,7 @@ let replica selfID selfLeader beatrate (mailbox: Actor<ReplicaMessage>) =
     }
 
     loop {
+        selfLeader = selfLeader
         leaders = Set.empty
         master = None
         messages = []

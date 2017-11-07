@@ -27,24 +27,20 @@ let scout selfID n leader acceptors ballotNumber (mailbox: Actor<ScoutMessage>) 
         | P1b (ref, b, pvals) -> 
             // Is returned ballot greater than the one we sent
             if (b %> state.ballotNumber) then
-                ()
-                // TODO SEND PREEMPT TO LEADER:  <! (sprintf "Preempted")
+                state.leader <! LeaderMessage.Preempted b
                 return! loop state
             else
                 let state = 
                     if (state.waitfor.Contains(ref)) then
                         let waitfor = Set.remove ref state.waitfor
                         if (waitfor.Count * 2) < n then
-                            () //TODO SEND ADOPTED MESSAGE TO LEADER
+                            state.leader <! LeaderMessage.Adopted(b, pvals)
                         { state with waitfor = waitfor ; acceptedPValues = Set.union state.acceptedPValues pvals }
                     else
                         state
                 return! loop state
     }
-
-
-    //TODO: FIX NETWORK PRINT
-    Set.iter (fun r -> r <! sprintf "p1a") acceptors
+    Set.iter (fun r -> r <! sprintf "p1a %i %i" ballotNumber.round ballotNumber.leaderID) acceptors
 
     loop {
         leader = leader
