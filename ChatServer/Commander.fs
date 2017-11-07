@@ -19,9 +19,6 @@ type State = {
 
 type CommanderMessage =
     | Join of IActorRef
-    | Heartbeat of string * IActorRef * int64
-    | Request of Command
-    | Decision of int64 * Command
     | Leave of IActorRef
     /// P2b (Acceptor's ref, BallotNumber)
     | P2b of IActorRef * BallotNumber
@@ -39,10 +36,6 @@ let room selfID beatrate leader acceptors ballotNumber slotNumber command (mailb
                                             sprintf "heartbeat %s" selfID)
             
             return! loop { state with acceptors = Set.add ref state.acceptors }
-
-        | Heartbeat (id, ref, ms) ->
-            printfn "heartbeat %s" id
-            return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
 
         | Leave ref ->
             return! loop { state with acceptors = Set.remove ref state.acceptors }

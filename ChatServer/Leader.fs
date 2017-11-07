@@ -14,11 +14,10 @@ type State = {
 
 type LeaderMessage =
     | Join of IActorRef
-    | JoinMaster of IActorRef
     | Heartbeat of string * IActorRef * int64
     | Leave of IActorRef
 
-let leader selfID (mailbox: Actor<ReplicaMessage>) =
+let leader selfID (mailbox: Actor<LeaderMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()

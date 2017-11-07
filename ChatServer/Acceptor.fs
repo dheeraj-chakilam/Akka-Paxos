@@ -42,7 +42,5 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                 // TODO: Check print statement
             commanderRef <! (sprintf "p2b %i %i %i" ballot_num leaderId s)
             return! loop state'
-             
-            | _ -> failwith "Incorrect P2A format"
     }
     loop { ballotNumber = (-1L, -1L); accepted = Set.empty }

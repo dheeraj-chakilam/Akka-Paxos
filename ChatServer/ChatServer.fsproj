@@ -56,9 +56,12 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="Network.fs" />
     <Compile Include="Acceptor.fs" />
     <Compile Include="Replica.fs" />
+    <Compile Include="Commander.fs" />
+    <Compile Include="Scout.fs" />
+    <Compile Include="Leader.fs" />
+    <Compile Include="Network.fs" />
     <Compile Include="Main.fs" />
     <None Include="App.config" />
     <Content Include="packages.config" />
