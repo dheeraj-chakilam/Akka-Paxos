@@ -57,13 +57,13 @@ let room selfID beatrate leader acceptors ballotNumber (mailbox: Actor<ScoutMess
     }
 
     let state = {
-        leader = leader ;
-        beatmap = Map.empty;
-        proposals = Map.empty;
-        decisions = Map.empty;
-        acceptors = acceptors;
-        waitfor = acceptors;
-        ballotNumber = ballotNumber;
+        leader = leader
+        beatmap = Map.empty
+        proposals = Map.empty
+        decisions = Map.empty
+        acceptors = acceptors
+        waitfor = acceptors
+        ballotNumber = ballotNumber
         adoptedPValues = Set.empty
     }
 

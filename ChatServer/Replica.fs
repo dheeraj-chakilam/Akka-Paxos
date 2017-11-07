@@ -111,11 +111,11 @@ let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
     }
 
     loop {
-        leaders = Set.empty ;
-        master = None ;
-        messages = [];
-        beatmap = Map.empty;
-        proposals = Map.empty;
-        decisions = Map.empty;
+        leaders = Set.empty
+        master = None
+        messages = []
+        beatmap = Map.empty
+        proposals = Map.empty
+        decisions = Map.empty
         slotNum = 0L
     }

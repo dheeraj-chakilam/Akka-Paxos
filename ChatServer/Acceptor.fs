@@ -42,5 +42,5 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
             return! loop state'
     }
     loop {
-        ballotNumber = {round = -1L; leaderID = -1L };
+        ballotNumber = { round = -1L; leaderID = -1L }
         accepted = Set.empty }

@@ -35,9 +35,9 @@ let leader selfID (mailbox: Actor<LeaderMessage>) =
     }
 
     loop {
-        acceptors = Set.empty;
-        replicas = Set.empty;
-        beatmap = Map.empty;
-        proposals = Map.empty;
+        acceptors = Set.empty
+        replicas = Set.empty
+        beatmap = Map.empty
+        proposals = Map.empty
         slotNum = 0L
     }

@@ -59,14 +59,14 @@ let room selfID beatrate leader acceptors ballotNumber slotNumber command (mailb
     }
 
     let state = {
-        leader = leader;
-        beatmap = Map.empty;
-        proposals = Map.empty;
-        decisions = Map.empty;
-        acceptors = acceptors;
-        waitfor = acceptors;
-        ballotNumber = ballotNumber;
-        slotNum = slotNumber;
+        leader = leader
+        beatmap = Map.empty
+        proposals = Map.empty
+        decisions = Map.empty
+        acceptors = acceptors
+        waitfor = acceptors
+        ballotNumber = ballotNumber
+        slotNum = slotNumber
         command = command
     }
 
