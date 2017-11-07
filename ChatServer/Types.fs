@@ -4,19 +4,14 @@ open Akka.FSharp
 open Akka.Actor
 
 /// A command of the form (id, message)
-type Command = string * string
+type Command = { id: int64 ; message: string }
 /// (Round, LeaderID)
-type BallotNumber = int64 * int64
+type BallotNumber = { round: int64 ; leaderID: int64 }
 /// (BallotNumber, Slot, Command)
-type PValue = BallotNumber * int64 * Command
+type PValue = {ballot: BallotNumber; slot: int64; command: Command}
 
 let (%>) (b1:BallotNumber) (b2:BallotNumber) =
-    let (ballotVal1, leaderId1) = b1
-    let (ballotVal2, leaderId2) = b2
-    if (ballotVal1 > ballotVal2) then
-        true
+    if not (b1.round = b2.round) then
+        b1.round > b2.round
     else
-        if (ballotVal1 = ballotVal2) then
-            (leaderId1 > leaderId2)
-        else
-            false
+        b1.leaderID > b2.leaderID

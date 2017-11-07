@@ -26,21 +26,21 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                     { state with ballotNumber = b }
                 else
                     state
-                    // TODO: FIX Pvalue-printing
+            // TODO: FIX Pvalue-printing
             scoutRef <! (sprintf "p1b")
             return! loop state'
                 
         // TODO CODECHECK   
-        | P2A (commanderRef, pval) ->
-            let (b, s, c) = pval
+        | P2A (commanderRef, p) ->
             let state' = 
-                if (b %> state.ballotNumber || b = state.ballotNumber) then
-                    { state with ballotNumber = b; accepted = Set.add (b, s, c) state.accepted }
+                if (p.ballot %> state.ballotNumber || p.ballot = state.ballotNumber) then
+                    { state with ballotNumber = p.ballot; accepted = Set.add p state.accepted }
                 else
                     state
-            let (ballot_num, leaderId) = state'.ballotNumber
-                // TODO: Check print statement
-            commanderRef <! (sprintf "p2b %i %i %i" ballot_num leaderId s)
+            // TODO: Fix sprintf
+            commanderRef <! (sprintf "p2b %i %i %i" p.ballot.round p.ballot.leaderID p.slot)
             return! loop state'
     }
-    loop { ballotNumber = (-1L, -1L); accepted = Set.empty }
+    loop {
+        ballotNumber = {round = -1L; leaderID = -1L };
+        accepted = Set.empty }

@@ -32,8 +32,7 @@ let propose command state =
     if not (Map.exists (fun _ c -> c = command) state.decisions) then
         let newSlot = findGap state 0L
         let proposals' = Map.add newSlot command state.proposals
-        let (id, op) = command
-        Set.iter (fun r -> r <! sprintf "propose %i %s %s" newSlot id op) state.leaders
+        Set.iter (fun r -> r <! sprintf "propose %i %i %s" newSlot command.id command.message) state.leaders
         { state with proposals = proposals' }
     else
         state
