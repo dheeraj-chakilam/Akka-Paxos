@@ -27,7 +27,8 @@ type ScoutMessage =
     | Decision of int64 * Command
     | Get
     | Leave of IActorRef
-    | P2b of IActorRef * BallotNumber * int64
+    /// P2b (Acceptor's Ref, BallotNumber)
+    | P2b of IActorRef * BallotNumber
 
 let room selfID beatrate aliveThreshold acceptors ballotNumber slotNumber command (mailbox: Actor<ScoutMessage>) =
     let rec loop state = actor {
@@ -74,7 +75,7 @@ let room selfID beatrate aliveThreshold acceptors ballotNumber slotNumber comman
         | Leave ref ->
             return! loop { state with leaders = Set.remove ref state.leaders }
         
-        | P2b (ref, b, s) -> 
+        | P2b (ref, b) -> 
             // Is returned ballot greater than the one we sent
             if (b %> state.ballotNumber) then
                 ()

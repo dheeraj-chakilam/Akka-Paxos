@@ -16,7 +16,7 @@ let sw =
     sw.Start()
     sw
 
-let handler world serverType selfID connection (mailbox: Actor<obj>) =  
+let handler replica acceptor leader serverType selfID connection (mailbox: Actor<obj>) =  
     let rec loop connection = actor {
         let! msg = mailbox.Receive()
 
@@ -63,12 +63,16 @@ let handler world serverType selfID connection (mailbox: Actor<obj>) =
     }
 
     match serverType with
-    | ChatServer -> world <! Join mailbox.Self
-    | MasterServer -> world <! JoinMaster mailbox.Self
+    | ChatServer ->
+        replica <! Join mailbox.Self
+        acceptor <! Join mailbox.Self
+        leader <! Join mailbox.Self
+    | MasterServer ->
+        replica <! JoinMaster mailbox.Self
     
     loop connection
 
-let server world serverType port selfID max (mailbox: Actor<obj>) =
+let server replica acceptor leader serverType port selfID max (mailbox: Actor<obj>) =
     let rec loop() = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -80,7 +84,7 @@ let server world serverType port selfID max (mailbox: Actor<obj>) =
         | :? Tcp.Connected as connected -> 
             printf "%O connected to the server\n" connected.RemoteAddress
             let handlerName = "handler_" + connected.RemoteAddress.ToString().Replace("[", "").Replace("]", "")
-            let handlerRef = spawn mailbox handlerName (handler world serverType selfID sender)
+            let handlerRef = spawn mailbox handlerName (handler replica acceptor leader serverType selfID sender)
             sender <! Tcp.Register handlerRef
 
         | _ -> mailbox.Unhandled()

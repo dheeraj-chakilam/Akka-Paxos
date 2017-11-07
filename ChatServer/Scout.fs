@@ -27,6 +27,7 @@ type ScoutMessage =
     | Decision of int64 * Command
     | Get
     | Leave of IActorRef
+    /// P1b (Acceptor's Ref, BallotNumber, Accepted Values)
     | P1b of IActorRef * BallotNumber * Set<PValue>
 
 let propose command state =

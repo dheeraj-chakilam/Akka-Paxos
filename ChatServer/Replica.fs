@@ -20,6 +20,7 @@ type ReplicaMessage =
     | Heartbeat of string * IActorRef * int64
     | Alive of int64 * string
     | Request of Command
+    /// Decision (Slot, Command)
     | Decision of int64 * Command
     | Get
     | Leave of IActorRef
@@ -52,7 +53,7 @@ let perform command state =
                 slotNum = state.slotNum + 1L ;
                 messages = command :: state.messages }
 
-let room selfID beatrate aliveThreshold (mailbox: Actor<ReplicaMessage>) =
+let replica selfID (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()

@@ -21,7 +21,7 @@ let main argv =
     match argv with
     | [|id; n; port|] ->
         let system = System.create "system" config
-        let roomRef = spawn system "room" (room id beatrate aliveThreshold timeout exitDelay)
+        let replicaRef = spawn system "room" (replica id)
         let serverRef = spawn system "server" (server roomRef ChatServer (20000 + int id) (int id) (int n))
         let mServerRef = spawn system "master-server" (server roomRef MasterServer (int port) (int id) (int n))
         ()

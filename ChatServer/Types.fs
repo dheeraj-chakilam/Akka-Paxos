@@ -5,7 +5,9 @@ open Akka.Actor
 
 /// A command of the form (id, message)
 type Command = string * string
+/// (Round, LeaderID)
 type BallotNumber = int64 * int64
+/// (BallotNumber, Slot, Command)
 type PValue = BallotNumber * int64 * Command
 
 let (%>) (b1:BallotNumber) (b2:BallotNumber) =
