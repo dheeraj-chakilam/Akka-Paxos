@@ -2,9 +2,9 @@
 
 open Akka.FSharp
 open Akka.Actor
-open Types
 open Commander
 open Scout
+open Types
 
 type LeaderState = {
     ballotNum: BallotNumber
@@ -30,7 +30,7 @@ let spawnCommander (mailbox: Actor<LeaderMessage>) selfID n slot command (state:
 let spawnScout (mailbox: Actor<LeaderMessage>) selfID n (state:LeaderState) =
     spawn mailbox.Context.System (sprintf "scout-%i" state.ballotNum.round) (scout selfID n mailbox.Self state.acceptors state.ballotNum)
 
-let leader selfID n selfAcceptor (mailbox: Actor<LeaderMessage>) =
+let leader selfID n (mailbox: Actor<LeaderMessage>) =
     let rec loop (state:LeaderState) = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -54,9 +54,8 @@ let leader selfID n selfAcceptor (mailbox: Actor<LeaderMessage>) =
             return! loop { state with acceptors = Set.remove ref state.acceptors; replicas = Set.remove ref state.replicas }
 
         // The ref is included in propose specifically to add selfReplica
-        | Propose (ref, slot, command) ->
+        | Propose (slot, command) ->
             //TODO: Remove
-            let state = { state with replicas = Set.add ref state.replicas }
             let state' =
                 if not (Map.containsKey slot state.proposals) then
                     let proposals = Map.add slot command state.proposals
@@ -100,14 +99,14 @@ let leader selfID n selfAcceptor (mailbox: Actor<LeaderMessage>) =
                     state
             return! loop state
         
-        | LeaderMessage.P1b (ref, b, pvals) -> 
+        | P1b (ref, b, pvals) -> 
             let scoutRef = Map.tryFind b state.scouts
             match scoutRef with
             | Some ref' -> ref' <! ScoutMessage.P1b (ref, b, pvals)
             | None -> ()
             return! loop state
 
-        | LeaderMessage.P2b (ref, b, s) ->
+        | P2b (ref, b, s) ->
             let commanderRef = Map.tryFind (b, s)  state.commanders
             match commanderRef with
             | Some ref' -> ref' <! CommanderMessage.P2b (ref, b)
@@ -118,7 +117,7 @@ let leader selfID n selfAcceptor (mailbox: Actor<LeaderMessage>) =
     loop {
         ballotNum = {round = 0L ; leaderID = selfID}
         active = false
-        acceptors = Set.add selfAcceptor Set.empty
+        acceptors = Set.empty
         replicas = Set.empty
         commanders = Map.empty
         scouts = Map.empty

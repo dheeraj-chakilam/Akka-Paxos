@@ -9,7 +9,7 @@ type PValue = { ballot: BallotNumber; slot: int64; command: Command}
 
 type LeaderMessage =
     | Join of IActorRef
-    | Propose of IActorRef * int64 * Command
+    | Propose of int64 * Command
     | Adopted of BallotNumber * Set<PValue>
     | Preempted of BallotNumber
     // To forward to the scout

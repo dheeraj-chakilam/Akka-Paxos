@@ -48,8 +48,8 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                     replica <! Get
             
                 | [| "propose"; slot ; cid ; commandMessage |] ->
-                    leader <! Propose (mailbox.Self, int64 slot, { id = int64 cid ; message = commandMessage })
-                
+                    leader <! Propose (int64 slot, { id = int64 cid ; message = commandMessage })
+
                 | [| "p1a" ; br ; blid |] ->
                     acceptor <! P1A (mailbox.Self, { round = int64 br; leaderID = int64 blid } )
 
@@ -80,17 +80,23 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                 
                 | [| "p2b" ;  br ; blid ; slot |] -> 
                     leader <! P2b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, int64 slot )
-
                 
+                | [| "decision"; slot ; cid ; commandMessage |] ->
+                    replica <! Decision (int64 slot, { id = int64 cid ; message = commandMessage })
+
                 | _ ->
-                    connection <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)) lines
+                    match connection with
+                    | Some c -> c <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)
+                    | None -> printf "Invalid request. (%A)\n" data) lines
     
         | :? Tcp.ConnectionClosed as closed ->
             replica <! Leave mailbox.Self
             mailbox.Context.Stop mailbox.Self
 
         | :? string as response ->
-            connection <! Tcp.Write.Create (ByteString.FromString (response + "\n"))
+            match connection with
+            | Some c -> c <! Tcp.Write.Create (ByteString.FromString (response + "\n"))
+            | None -> mailbox.Self <! Tcp.Received(ByteString.FromString (response + "\n"))
 
         | _ -> mailbox.Unhandled()
 
@@ -111,6 +117,10 @@ let server replica acceptor leader serverType port selfID max (mailbox: Actor<ob
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
         
+        // This handler gives a reference to the replica, acceptor, leader residing on the self server
+        let handlerName = "handler_Self"
+        let selfHandlerRef = spawn mailbox handlerName (handler replica acceptor leader serverType selfID None)
+
         match msg with
         | :? Tcp.Bound as bound ->
             printf "Listening on %O\n" bound.LocalAddress
@@ -118,7 +128,7 @@ let server replica acceptor leader serverType port selfID max (mailbox: Actor<ob
         | :? Tcp.Connected as connected -> 
             printf "%O connected to the server\n" connected.RemoteAddress
             let handlerName = "handler_" + connected.RemoteAddress.ToString().Replace("[", "").Replace("]", "")
-            let handlerRef = spawn mailbox handlerName (handler replica acceptor leader serverType selfID sender)
+            let handlerRef = spawn mailbox handlerName (handler replica acceptor leader serverType selfID (Some sender))
             sender <! Tcp.Register handlerRef
 
         | _ -> mailbox.Unhandled()

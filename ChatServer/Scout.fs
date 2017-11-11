@@ -5,12 +5,10 @@ open Akka.Actor
 open Types
 
 type ScoutState = {
-    acceptors: Set<IActorRef>
     ballotNumber: BallotNumber
     waitfor: Set<IActorRef>
     acceptedPValues: Set<PValue>
     /// The leader who spawned this commander
-    leader: IActorRef
     beatmap: Map<string,IActorRef*int64>
 }
 
@@ -27,25 +25,24 @@ let scout selfID n leader acceptors ballotNumber (mailbox: Actor<ScoutMessage>) 
         | P1b (ref, b, pvals) -> 
             // Is returned ballot greater than the one we sent
             if (b %> state.ballotNumber) then
-                state.leader <! LeaderMessage.Preempted b
+                leader <! LeaderMessage.Preempted b
                 return! loop state
             else
                 let state = 
                     if (state.waitfor.Contains(ref)) then
                         let waitfor = Set.remove ref state.waitfor
                         if (waitfor.Count * 2) < n then
-                            state.leader <! LeaderMessage.Adopted(b, pvals)
+                            leader <! LeaderMessage.Adopted(b, pvals)
                         { state with waitfor = waitfor ; acceptedPValues = Set.union state.acceptedPValues pvals }
                     else
                         state
                 return! loop state
     }
+    
     Set.iter (fun r -> r <! sprintf "p1a %i %i" ballotNumber.round ballotNumber.leaderID) acceptors
 
     loop {
-        leader = leader
         beatmap = Map.empty
-        acceptors = acceptors
         waitfor = acceptors
         ballotNumber = ballotNumber
         acceptedPValues = Set.empty

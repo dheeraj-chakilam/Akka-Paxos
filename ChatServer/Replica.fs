@@ -8,7 +8,6 @@ type State = {
     slotNum: int64
     proposals: Map<int64, Command>
     decisions: Map<int64, Command>
-    selfLeader: IActorRef
     leaders: Set<IActorRef>
     master: IActorRef option
     messages: List<Command>
@@ -34,8 +33,7 @@ let propose command state =
     if not (Map.exists (fun _ c -> c = command) state.decisions) then
         let newSlot = findGap state 0L
         let proposals' = Map.add newSlot command state.proposals
-        Set.iter (fun r -> r <! sprintf "propose %i %i %s" newSlot command.id command.message) state.leaders
-        state.selfLeader <! LeaderMessage.Propose 
+        Set.iter (fun r -> r <! sprintf "propose %i %i %s" newSlot command.id command.message) state.leaders 
         { state with proposals = proposals' }
     else
         state
@@ -56,7 +54,7 @@ let perform command state =
                 slotNum = state.slotNum + 1L ;
                 messages = command :: state.messages }
 
-let replica selfID selfLeader beatrate (mailbox: Actor<ReplicaMessage>) =
+let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -124,7 +122,6 @@ let replica selfID selfLeader beatrate (mailbox: Actor<ReplicaMessage>) =
     }
 
     loop {
-        selfLeader = selfLeader
         leaders = Set.empty
         master = None
         messages = []
