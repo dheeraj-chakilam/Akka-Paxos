@@ -16,7 +16,7 @@ type ScoutMessage =
     /// P1b (Acceptor's Ref, BallotNumber, Accepted Values)
     | P1b of IActorRef * BallotNumber * Set<PValue>
 
-let scout selfID n leader acceptors ballotNumber (mailbox: Actor<ScoutMessage>) =
+let scout (selfID: int64) n leader acceptors ballotNumber (mailbox: Actor<ScoutMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -39,6 +39,7 @@ let scout selfID n leader acceptors ballotNumber (mailbox: Actor<ScoutMessage>) 
                 return! loop state
     }
     
+    printfn "Scout spawned with ID: %i BallotLeaderID:%i BallotRound: %i Acceptors: %O" selfID ballotNumber.leaderID ballotNumber.round acceptors
     Set.iter (fun r -> r <! sprintf "p1a %i %i" ballotNumber.round ballotNumber.leaderID) acceptors
 
     loop {

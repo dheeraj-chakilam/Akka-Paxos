@@ -189,7 +189,7 @@ def main():
                     stderr=open('/dev/null', 'w'), preexec_fn=os.setsid)
 
             # sleep for a while to allow the process be ready
-            time.sleep(1)
+            time.sleep(3)
             # connect to the port of the pid
             handler = ClientHandler(pid, address, port, process)
             threads[pid] = handler

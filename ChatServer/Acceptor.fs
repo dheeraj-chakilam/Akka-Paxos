@@ -37,14 +37,14 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                 
         // TODO CODECHECK   
         | P2A (commanderRef, p) ->
-            let state' = 
+            let state = 
                 if (p.ballot %> state.ballotNumber || p.ballot = state.ballotNumber) then
                     { state with ballotNumber = p.ballot; accepted = Set.add p state.accepted }
                 else
                     state
             // TODO: Fix sprintf
-            commanderRef <! (sprintf "p2b %i %i %i" p.ballot.round p.ballot.leaderID p.slot)
-            return! loop state'
+            commanderRef <! (sprintf "p2b %i %i %i" state.ballotNumber.round state.ballotNumber.leaderID p.slot)
+            return! loop state
     }
     loop {
         ballotNumber = { round = -1L; leaderID = -1L }

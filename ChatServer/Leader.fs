@@ -25,29 +25,32 @@ let pmax (pvals:Set<PValue>) =
     |> Map.map (fun slot pval -> pval.command)
 
 let spawnCommander (mailbox: Actor<LeaderMessage>) selfID n slot command (state:LeaderState) =
-    spawn mailbox.Context.System (sprintf "commander-%i-%i-%i" state.ballotNum.round slot command.id) (commander selfID n mailbox.Self state.replicas state.acceptors state.ballotNum slot command)
+    spawn mailbox.Context.System (sprintf "commander-%i-%i-%i-%i" selfID state.ballotNum.round slot command.id) (commander selfID n mailbox.Self state.replicas state.acceptors state.ballotNum slot command)
 
 let spawnScout (mailbox: Actor<LeaderMessage>) selfID n (state:LeaderState) =
     spawn mailbox.Context.System (sprintf "scout-%i" state.ballotNum.round) (scout selfID n mailbox.Self state.acceptors state.ballotNum)
 
-let leader selfID n (mailbox: Actor<LeaderMessage>) =
+let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
     let rec loop (state:LeaderState) = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
 
         match msg with
         | Join ref ->
-            let acceptors = (Set.add ref state.acceptors)
+            printfn "Leader %i Received a Join from %O" selfID ref
             let state =
-                if Set.count acceptors = (n / 2) + 1 then
+                { state with acceptors = (Set.add ref state.acceptors) }
+            let state =
+                if Set.count state.acceptors = (n / 2) + 1 then
+                    printfn "Spawning a scout"
                     let scoutRef = spawnScout mailbox selfID n state
                     { state with scouts = Map.add state.ballotNum scoutRef state.scouts }
                 else
                     state
-            return! loop { state with acceptors = acceptors ; replicas = (Set.add ref state.replicas) }
+            return! loop { state with replicas = (Set.add ref state.replicas) }
 
         | Heartbeat (id, ref, ms) ->
-            printfn "heartbeat %s" id
+            //printfn "leader heartbeat %s" id
             return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
 
         | Leave ref ->
@@ -55,7 +58,7 @@ let leader selfID n (mailbox: Actor<LeaderMessage>) =
 
         // The ref is included in propose specifically to add selfReplica
         | Propose (slot, command) ->
-            //TODO: Remove
+            printfn "Leader %i received a propose" selfID
             let state' =
                 if not (Map.containsKey slot state.proposals) then
                     let proposals = Map.add slot command state.proposals
@@ -70,6 +73,7 @@ let leader selfID n (mailbox: Actor<LeaderMessage>) =
             return! loop state'
         
         | Adopted (ballot, pvals) ->
+            printfn "Leader %i received an adopted message with ballot (%i,%i), pvals: %O" selfID ballot.leaderID ballot.round pvals
             let state =
                 if ballot = state.ballotNum then
                     let proposals = Map.fold (fun state slot command -> Map.add slot command state) state.proposals (pmax pvals)
@@ -87,14 +91,15 @@ let leader selfID n (mailbox: Actor<LeaderMessage>) =
             return! loop state
         
         | Preempted ballot ->
+            printfn "Leader %i received a pre-empted message with ballot (%i,%i)" selfID ballot.leaderID ballot.round
             let state =
                 if ballot %> state.ballotNum then
                     //TODO: Backoff
                     let state' = { state with active = false ; ballotNum = { round = ballot.round + 1L ; leaderID = selfID } }
                     let scoutRef =
                         //TODO: Ensure only one scout is spawned only once per ballot to ensure unique names
-                        spawnScout mailbox selfID n state
-                    { state' with active = false ; ballotNum = { round = ballot.round + 1L ; leaderID = selfID } ; scouts = Map.add state.ballotNum scoutRef state.scouts }
+                        spawnScout mailbox selfID n state'
+                    { state' with scouts = Map.add state'.ballotNum scoutRef state'.scouts }
                 else
                     state
             return! loop state

@@ -23,7 +23,7 @@ let commander selfID n leader replicas acceptors ballotNumber (slotNumber: int64
         match msg with        
         | P2b (ref, b) -> 
             // Is returned ballot greater than the one we sent
-            if (b %> state.ballotNumber) then
+            if (b <> state.ballotNumber) then
                 leader <! LeaderMessage.Preempted b
                 return! loop state
             else

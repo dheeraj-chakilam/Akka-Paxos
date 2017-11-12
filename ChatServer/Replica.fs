@@ -25,20 +25,21 @@ type ReplicaMessage =
     | Leave of IActorRef
 
 let propose command state =
+    printfn "Trying to propose %O" command
     let rec findGap state i =
         if (Map.containsKey i state.proposals) || (Map.containsKey i state.decisions) then
-            findGap state i + 1L
+            findGap state (i + 1L)
         else
             i
     if not (Map.exists (fun _ c -> c = command) state.decisions) then
         let newSlot = findGap state 0L
         let proposals' = Map.add newSlot command state.proposals
-        Set.iter (fun r -> r <! sprintf "propose %i %i %s" newSlot command.id command.message) state.leaders 
+        Set.iter (fun r -> r <! sprintf "propose %i %i %s" newSlot command.id command.message) state.leaders
         { state with proposals = proposals' }
     else
         state
 
-let perform command state = 
+let perform command state =
     let prevPerform = 
         state.decisions
         |> Map.filter (fun s _ -> s < state.slotNum)
@@ -54,7 +55,7 @@ let perform command state =
                 slotNum = state.slotNum + 1L ;
                 messages = command :: state.messages }
 
-let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
+let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
     let rec loop state = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
@@ -64,7 +65,7 @@ let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
             mailbox.Context.System.Scheduler.ScheduleTellRepeatedly(System.TimeSpan.FromMilliseconds 0.,
                                             System.TimeSpan.FromMilliseconds beatrate,
                                             ref,
-                                            sprintf "heartbeat %s" selfID)
+                                            sprintf "heartbeat %i" selfID)
             
             return! loop { state with leaders = Set.add ref state.leaders }
 
@@ -72,7 +73,7 @@ let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
             return! loop { state with master = Some ref }
 
         | Heartbeat (id, ref, ms) ->
-            printfn "heartbeat %s" id
+            //printfn "replica heartbeat %s" id
             return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
 
         | Leave ref ->
@@ -80,7 +81,9 @@ let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
 
         | Get ->
             match state.master with
-            | Some m -> m <! (sprintf "chatLog %s" (System.String.Join(",",List.rev state.messages)))
+            | Some m ->
+                let messageList = List.map (fun c -> c.message )state.messages
+                m <! (sprintf "chatLog %s" (System.String.Join(",",List.rev messageList)))
             | None -> ()
 
             return! loop state
@@ -90,7 +93,8 @@ let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
             let state' = propose command state
             return! loop state'
         
-        | Decision (slot, command) ->         
+        | Decision (slot, command) ->
+            printfn "Replica %i received a decision" selfID
             // Recursive function to Perform all possible commands (until gap)
             let rec performPossibleCommands st = 
                 let commandInDecision = 
@@ -106,13 +110,16 @@ let replica selfID beatrate (mailbox: Actor<ReplicaMessage>) =
                     
                     // We ensure on re-proposal that the decision was not our proposal
                     let st' = 
-                        let c1 = Map.find st.slotNum st.decisions
-                        let c2 = Map.find st.slotNum st.proposals
-                      
-                        if commandInProposal && c1 <> c2 then
-                            propose c2 st
-                        else
+                        if not commandInProposal then
                             st
+                        else
+                            let c1 = Map.find st.slotNum st.decisions
+                            let c2 = Map.find st.slotNum st.proposals
+                      
+                            if c1 <> c2 then
+                                propose c2 st
+                            else
+                                st
                     let st'' = perform command st'
                     performPossibleCommands st''
             
