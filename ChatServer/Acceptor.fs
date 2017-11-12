@@ -28,7 +28,7 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                     state
             // TODO: FIX Pvalue-printing
             let acceptedString =
-                state.accepted
+                state'.accepted
                 |> Set.toSeq
                 |> Seq.map (fun pval -> sprintf "%i,%i,%i,%i,%s" pval.ballot.round pval.ballot.leaderID pval.slot pval.command.id pval.command.message)
                 |> String.concat "|"
@@ -39,11 +39,12 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
         | P2A (commanderRef, p) ->
             let state = 
                 if (p.ballot %> state.ballotNumber || p.ballot = state.ballotNumber) then
+                    printfn "Accepter accepted a ballot with \n p.ballot %O! \n state.ballot %O" p.ballot state.ballotNumber
                     { state with ballotNumber = p.ballot; accepted = Set.add p state.accepted }
                 else
                     state
             // TODO: Fix sprintf
-            commanderRef <! (sprintf "p2b %i %i %i" state.ballotNumber.round state.ballotNumber.leaderID p.slot)
+            commanderRef <! (sprintf "p2b originalBallot %i %i updatedBallot %i %i %i" p.ballot.round p.ballot.leaderID state.ballotNumber.round state.ballotNumber.leaderID p.slot)
             return! loop state
     }
     loop {

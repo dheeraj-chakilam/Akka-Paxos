@@ -59,6 +59,7 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
         // The ref is included in propose specifically to add selfReplica
         | Propose (slot, command) ->
             printfn "Leader %i received a propose" selfID
+            printfn "Leader has ballot %O" state.ballotNum
             let state' =
                 if not (Map.containsKey slot state.proposals) then
                     let proposals = Map.add slot command state.proposals
@@ -74,6 +75,7 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
         
         | Adopted (ballot, pvals) ->
             printfn "Leader %i received an adopted message with ballot (%i,%i), pvals: %O" selfID ballot.leaderID ballot.round pvals
+            printfn "Leader has ballot %O" state.ballotNum
             let state =
                 if ballot = state.ballotNum then
                     let proposals = Map.fold (fun state slot command -> Map.add slot command state) state.proposals (pmax pvals)
@@ -111,11 +113,13 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
             | None -> ()
             return! loop state
 
-        | P2b (ref, b, s) ->
-            let commanderRef = Map.tryFind (b, s)  state.commanders
+        | P2b (ref, ob, nb, s) ->
+            printfn "Leader %i received a P2b with ballot:%O slot: %i" selfID nb s
+            printfn "Leader %i has state.commanders:%O" selfID state.commanders
+            let commanderRef = Map.tryFind (ob, s)  state.commanders
             match commanderRef with
-            | Some ref' -> ref' <! CommanderMessage.P2b (ref, b)
-            | None -> ()
+            | Some ref' -> ref' <! CommanderMessage.P2b (ref, nb)
+            | None -> printfn "ERROR: Found no commander in leader %i" selfID
             return! loop state
     }
 

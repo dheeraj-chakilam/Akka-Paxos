@@ -5,7 +5,6 @@ open Akka.Actor
 open Types
 
 type CommanderState = {
-    ballotNumber: BallotNumber
     waitfor: Set<IActorRef>
     /// The leader who spawned this commander
     beatmap: Map<string,IActorRef*int64>
@@ -22,8 +21,9 @@ let commander selfID n leader replicas acceptors ballotNumber (slotNumber: int64
 
         match msg with        
         | P2b (ref, b) -> 
+            printfn "Commander received a P2B with \n ballot %O! \n state.ballot %O" b ballotNumber
             // Is returned ballot greater than the one we sent
-            if (b <> state.ballotNumber) then
+            if (b <> ballotNumber) then
                 leader <! LeaderMessage.Preempted b
                 return! loop state
             else
@@ -37,10 +37,11 @@ let commander selfID n leader replicas acceptors ballotNumber (slotNumber: int64
                         state
                 return! loop state
     }
+
+    printfn "Commander sending ballot %O" ballotNumber
     Set.iter (fun r -> r <! sprintf "p2a %i %i %i %i %s" ballotNumber.round ballotNumber.leaderID slotNumber command.id command.message) acceptors
 
     loop {
         beatmap = Map.empty
         waitfor = acceptors
-        ballotNumber = ballotNumber
     }

@@ -43,23 +43,23 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                     mailbox.Context.Stop mailbox.Self
 
                 | [| "msg"; messageID; message |] ->
-                    //printfn "Received message: %s" message
+                    printfn "Received message: %s" message
                     replica <! Request { id = int64 messageID ; message = message }
                 
                 | [| "get"; "chatLog" |] ->
-                    //printfn "Recieved a get chatLog request"
+                    printfn "Recieved a get chatLog request"
                     replica <! Get
             
                 | [| "propose"; slot ; cid ; commandMessage |] ->
-                    //printfn "Received a propose: Slot %s, CID %s, message %s" slot cid commandMessage
+                    printfn "Received a propose: Slot %s, CID %s, message %s" slot cid commandMessage
                     leader <! Propose (int64 slot, { id = int64 cid ; message = commandMessage })
 
                 | [| "p1a" ; br ; blid |] ->
-                    //printfn "Received a p1a"
+                    printfn "Received a p1a"
                     acceptor <! P1A (mailbox.Self, { round = int64 br; leaderID = int64 blid } )
 
                 | [| "p1b" ; "ballot" ; br ; blid ; "pvalues" ; acceptedString |] ->
-                    //printfn "Received a p1b"
+                    printfn "Received a p1b"
                     let pvalues =
                         acceptedString.Trim().Split([|'|'|])
                         |> Array.fold (fun state pvalString ->
@@ -76,11 +76,11 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                     leader <! P1b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, pvalues )
 
                 | [| "p1b" ; "ballot" ; br ; blid ; "pvalues" |] ->
-                    //printfn "Received a p1b"
+                    printfn "Received a p1b"
                     leader <! P1b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, Set.empty )
                 
                  | [| "p2a" ; br ; blid ; slot ; commandId ; commandMessage |] ->
-                    //printfn "Received a p2a"
+                    printfn "Received a p2a"
                     let pval = 
                         { 
                             ballot = { round = int64 br; leaderID = int64 blid }
@@ -89,13 +89,19 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                         }
                     acceptor <! P2A (mailbox.Self, pval)
                 
-                | [| "p2b" ;  br ; blid ; slot |] -> 
-                    //printfn "Received a p2b"
-                    leader <! P2b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, int64 slot )
+                | [| "p2b" ;  "originalBallot" ; obr; obi; "updatedBallot" ; br ; blid ; slot |] -> 
+                    printfn "Received a p2b"
+                    leader <! P2b (mailbox.Self,
+                                  { round = int64 obr; leaderID = int64 obi },
+                                  { round = int64 br; leaderID = int64 blid },
+                                  int64 slot )
                 
                 | [| "decision"; slot ; cid ; commandMessage |] ->
-                    //printfn "Received a decision"
+                    printfn "Received a decision"
                     replica <! Decision (int64 slot, { id = int64 cid ; message = commandMessage })
+
+                | [| "crash" |] ->
+                    System.Environment.Exit(0)
 
                 | _ ->
                     match connection with
