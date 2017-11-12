@@ -59,7 +59,7 @@
     <Compile Include="Acceptor.fs" />
     <Compile Include="Replica.fs" />
     <Compile Include="Scout.fs" />
-    <Compile Include="..\..\..\..\source\repos\P2\ChatServer\Commander.fs" />
+    <Compile Include="Commander.fs" />
     <Compile Include="Leader.fs" />
     <Compile Include="Network.fs" />
     <Compile Include="Main.fs" />
