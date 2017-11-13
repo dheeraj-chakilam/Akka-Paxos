@@ -128,15 +128,14 @@ let leader (selfID: int64) n beatrate (mailbox: Actor<LeaderMessage>) =
             return! loop state
         
         | Preempted ballot ->
-            printfn "Leader %i received a pre-empted message with ballot (%i,%i)" selfID ballot.leaderID ballot.round
+            printfn "Leader %i received a pre-empted message with ballot (%i,%i) and selfBallot (%i,%i)" selfID ballot.leaderID ballot.round state.ballotNum.leaderID state.ballotNum.round
             let state =
                 if ballot %> state.ballotNum then
                     //TODO: Backoff
                     let state' = { state with active = false ; ballotNum = { round = ballot.round + 1L ; leaderID = selfID } }
                     let (scoutName, scoutRef) =
-                        //TODO: Ensure only one scout is spawned only once per ballot to ensure unique names
                         async {
-                            do! Async.Sleep(System.Random().Next(7000))
+                            do! Async.Sleep(System.Random().Next(1000))
                             return spawnScout mailbox selfID n state'
                         }
                         |> Async.RunSynchronously

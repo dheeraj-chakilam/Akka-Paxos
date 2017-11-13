@@ -85,7 +85,7 @@ let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
             return! loop state'
         
         | Decision (s, p) ->
-            printfn "Replica %i received a decision" selfID
+            printfn "Replica %i received a decision with slot: %A command: %A" selfID s p
             // Recursive function to Perform all possible commands (until gap)
             let rec performPossibleCommands state =
                 printfn "In performPossibleCommands"
@@ -106,7 +106,7 @@ let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
             let state =
                 { state with decisions = Map.add s p state.decisions }
                 |> performPossibleCommands
-            
+            printfn "Out of decision with proposals: %A decisions: %A" state.proposals state.decisions
             return! loop state
     }
 
