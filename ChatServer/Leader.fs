@@ -12,7 +12,7 @@ type LeaderState = {
     proposals: Map<int64, Command>
     acceptors: Set<IActorRef>
     replicas: Set<IActorRef>
-    commanders: Map<BallotNumber * int64, IActorRef>
+    commanders: Map<string, IActorRef>
     scouts: Map<BallotNumber, IActorRef>
     beatmap: Map<string,IActorRef*int64>
 }
@@ -25,10 +25,13 @@ let pmax (pvals:Set<PValue>) =
     |> Map.map (fun slot pval -> pval.command)
 
 let spawnCommander (mailbox: Actor<LeaderMessage>) selfID n slot command (state:LeaderState) =
-    spawn mailbox.Context.System (sprintf "commander-%i-%i-%i-%i" selfID state.ballotNum.round slot command.id) (commander selfID n mailbox.Self state.replicas state.acceptors state.ballotNum slot command)
+    let commanderName = sprintf "commander-%i-%i-%i-%i-%i" selfID state.ballotNum.leaderID state.ballotNum.round slot command.id
+    let commanderRef =
+        spawn mailbox.Context.System commanderName (commander selfID commanderName n mailbox.Self state.acceptors state.replicas state.ballotNum slot command)
+    (commanderName, commanderRef)
 
 let spawnScout (mailbox: Actor<LeaderMessage>) selfID n (state:LeaderState) =
-    spawn mailbox.Context.System (sprintf "scout-%i" state.ballotNum.round) (scout selfID n mailbox.Self state.acceptors state.ballotNum)
+    spawn mailbox.Context.System (sprintf "scout-%i-%i" state.ballotNum.leaderID state.ballotNum.round) (scout selfID n mailbox.Self state.acceptors state.ballotNum)
 
 let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
     let rec loop (state:LeaderState) = actor {
@@ -37,9 +40,9 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
 
         match msg with
         | Join ref ->
-            printfn "Leader %i Received a Join from %O" selfID ref
+            printfn "Leader %i Received a Join from %A" selfID ref
             let state =
-                { state with acceptors = (Set.add ref state.acceptors) }
+                { state with acceptors = (Set.add ref state.acceptors) ; replicas = (Set.add ref state.replicas) }
             let state =
                 if Set.count state.acceptors = (n / 2) + 1 then
                     printfn "Spawning a scout"
@@ -47,7 +50,7 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
                     { state with scouts = Map.add state.ballotNum scoutRef state.scouts }
                 else
                     state
-            return! loop { state with replicas = (Set.add ref state.replicas) }
+            return! loop state
 
         | Heartbeat (id, ref, ms) ->
             //printfn "leader heartbeat %s" id
@@ -59,35 +62,36 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
         // The ref is included in propose specifically to add selfReplica
         | Propose (slot, command) ->
             printfn "Leader %i received a propose" selfID
-            printfn "Leader has ballot %O" state.ballotNum
-            let state' =
+            printfn "Leader has ballot %A" state.ballotNum
+            let state =
                 if not (Map.containsKey slot state.proposals) then
-                    let proposals = Map.add slot command state.proposals
+                    let state =
+                        { state with proposals = Map.add slot command state.proposals }
                     if state.active then
-                        let commanderRef = spawnCommander mailbox selfID n slot command state
-                        let commanders = Map.add (state.ballotNum, slot) commanderRef state.commanders
-                        { state with proposals = proposals ; commanders = commanders }
+                        { state with
+                            commanders =
+                                let name, ref = (spawnCommander mailbox selfID n slot command state)
+                                Map.add name ref state.commanders }
                     else
-                        { state with proposals = proposals }
+                        state
                 else
                     state
-            return! loop state'
+            return! loop state
         
         | Adopted (ballot, pvals) ->
-            printfn "Leader %i received an adopted message with ballot (%i,%i), pvals: %O" selfID ballot.leaderID ballot.round pvals
-            printfn "Leader has ballot %O" state.ballotNum
+            printfn "Leader %i received an adopted message with ballot (%i,%i), pvals: %A" selfID ballot.leaderID ballot.round pvals
+            printfn "Leader has ballot %A" state.ballotNum
             let state =
                 if ballot = state.ballotNum then
                     let proposals = Map.fold (fun state slot command -> Map.add slot command state) state.proposals (pmax pvals)
-                    let commanderRefs =
+                    let commanders =
                         proposals
-                        |> Map.toList
-                        |> List.map (fun (slot, command) -> ((state.ballotNum, slot), spawnCommander mailbox selfID n slot command state))
-                        |> Map.ofList
-                    
-                    let commanders' = 
-                        Map.fold (fun state (slot, command) ref -> Map.add (slot, command) ref state) state.commanders commanderRefs
-                    { state with commanders = commanders' ; active = true }
+                        |> Map.fold (fun stateCommanders slot command ->
+                            let (name, ref) = spawnCommander mailbox selfID n slot command state
+                            Map.add name ref  stateCommanders) state.commanders
+                    { state with
+                        active = true
+                        commanders = commanders }
                 else
                     state
             return! loop state
@@ -100,26 +104,28 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
                     let state' = { state with active = false ; ballotNum = { round = ballot.round + 1L ; leaderID = selfID } }
                     let scoutRef =
                         //TODO: Ensure only one scout is spawned only once per ballot to ensure unique names
-                        spawnScout mailbox selfID n state'
+                        async {
+                            do! Async.Sleep(System.Random().Next(7000))
+                            return spawnScout mailbox selfID n state'
+                        }
+                        |> Async.RunSynchronously
                     { state' with scouts = Map.add state'.ballotNum scoutRef state'.scouts }
                 else
                     state
             return! loop state
         
-        | P1b (ref, b, pvals) -> 
-            let scoutRef = Map.tryFind b state.scouts
-            match scoutRef with
+        | P1b (ref, b, pvals) ->
+            match Map.tryFind b state.scouts with
             | Some ref' -> ref' <! ScoutMessage.P1b (ref, b, pvals)
-            | None -> ()
+            | None -> printfn "ERROR: Found no scout for ballot %A" b
             return! loop state
 
-        | P2b (ref, ob, nb, s) ->
-            printfn "Leader %i received a P2b with ballot:%O slot: %i" selfID nb s
-            printfn "Leader %i has state.commanders:%O" selfID state.commanders
-            let commanderRef = Map.tryFind (ob, s)  state.commanders
-            match commanderRef with
-            | Some ref' -> ref' <! CommanderMessage.P2b (ref, nb)
-            | None -> printfn "ERROR: Found no commander in leader %i" selfID
+        | P2b (name, ref, b, s) ->
+            printfn "Leader %i received a P2b with ballot:%A slot: %i" selfID b s
+            printfn "Leader %i has state.commanders:%A" selfID state.commanders
+            match Map.tryFind name state.commanders with
+            | Some ref' -> ref' <! CommanderMessage.P2b (ref, b)
+            | None -> printfn "ERROR: Found no commander for name: %s" name
             return! loop state
     }
 

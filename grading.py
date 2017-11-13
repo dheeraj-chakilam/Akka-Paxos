@@ -27,9 +27,6 @@ for f in os.listdir(tests):
                     ' > ' + join(test_output, fn+'.output'))
 
             os.system('./stopall >/dev/null 2>/dev/null')
-            os.system("ps aux | grep -i java | awk '{print $2}' | xargs kill -9 >/dev/null 2>/dev/null")
-            os.system("ps aux | grep -i process | awk '{print $2}' | xargs kill -9 >/dev/null 2>/dev/null")
-            os.system("ps aux | grep -i python | grep -v grading | awk '{print $2}' | xargs kill -9 >/dev/null 2>/dev/null")
 
             with open(join(test_output, fn+'.output')) as fi:
                     out = fi.read().strip().split('\n')

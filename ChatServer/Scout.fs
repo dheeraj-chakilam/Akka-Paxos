@@ -23,23 +23,23 @@ let scout (selfID: int64) n leader acceptors ballotNumber (mailbox: Actor<ScoutM
 
         match msg with        
         | P1b (ref, b, pvals) -> 
-            // Is returned ballot greater than the one we sent
-            if (b %> state.ballotNumber) then
-                leader <! LeaderMessage.Preempted b
-                return! loop state
-            else
-                let state = 
-                    if (state.waitfor.Contains(ref)) then
-                        let waitfor = Set.remove ref state.waitfor
-                        if (waitfor.Count * 2) < n then
-                            leader <! LeaderMessage.Adopted(b, pvals)
-                        { state with waitfor = waitfor ; acceptedPValues = Set.union state.acceptedPValues pvals }
-                    else
-                        state
-                return! loop state
+            let state =
+                // Is returned ballot greater than the one we sent
+                if (b = state.ballotNumber) then
+                    let state =
+                        { state with
+                            waitfor = Set.remove ref state.waitfor
+                            acceptedPValues = Set.union state.acceptedPValues pvals }
+                    if Set.count state.waitfor < n / 2 then
+                        leader <! LeaderMessage.Adopted(b, state.acceptedPValues)
+                    state
+                else
+                    leader <! LeaderMessage.Preempted b
+                    state
+            return! loop state
     }
     
-    printfn "Scout spawned with ID: %i BallotLeaderID:%i BallotRound: %i Acceptors: %O" selfID ballotNumber.leaderID ballotNumber.round acceptors
+    printfn "Scout spawned with ID: %i BallotLeaderID:%i BallotRound: %i Acceptors: %A" selfID ballotNumber.leaderID ballotNumber.round acceptors
     Set.iter (fun r -> r <! sprintf "p1a %i %i" ballotNumber.round ballotNumber.leaderID) acceptors
 
     loop {

@@ -6,7 +6,9 @@ open Types
 
 type State = {
     slotNum: int64
+    /// Map (Slot, Command)
     proposals: Map<int64, Command>
+    /// Map (Slot, Command)
     decisions: Map<int64, Command>
     leaders: Set<IActorRef>
     master: IActorRef option
@@ -25,7 +27,7 @@ type ReplicaMessage =
     | Leave of IActorRef
 
 let propose command state =
-    printfn "Trying to propose %O" command
+    printfn "Trying to propose %A" command
     let rec findGap state i =
         if (Map.containsKey i state.proposals) || (Map.containsKey i state.decisions) then
             findGap state (i + 1L)
@@ -40,7 +42,7 @@ let propose command state =
         state
 
 let perform command state =
-    let prevPerform = 
+    let prevPerform =
         state.decisions
         |> Map.filter (fun s _ -> s < state.slotNum)
         |> Map.exists (fun _ c -> command = c)
@@ -93,39 +95,27 @@ let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
             let state' = propose command state
             return! loop state'
         
-        | Decision (slot, command) ->
+        | Decision (s, p) ->
             printfn "Replica %i received a decision" selfID
             // Recursive function to Perform all possible commands (until gap)
-            let rec performPossibleCommands st = 
-                let commandInDecision = 
-                    st.decisions
-                    |> Map.containsKey st.slotNum
-                
-                if not commandInDecision then
-                    st
-                else
-                    let commandInProposal =
-                        st.proposals
-                        |> Map.containsKey st.slotNum
-                    
-                    // We ensure on re-proposal that the decision was not our proposal
-                    let st' = 
-                        if not commandInProposal then
-                            st
-                        else
-                            let c1 = Map.find st.slotNum st.decisions
-                            let c2 = Map.find st.slotNum st.proposals
-                      
-                            if c1 <> c2 then
-                                propose c2 st
-                            else
-                                st
-                    let st'' = perform command st'
-                    performPossibleCommands st''
+            let rec performPossibleCommands state = 
+                match Map.tryFind state.slotNum state.decisions with
+                | Some p' ->
+                    let state =
+                        match Map.tryFind state.slotNum state.proposals with
+                        | Some p'' when p'' <> p' ->
+                            propose p' state
+                            |> performPossibleCommands
+                        | _ -> state
+                    perform p' state
+                | None ->
+                    state
             
-            let state' = { state with decisions = Map.add slot command state.decisions }
-            let state'' = performPossibleCommands state'
-            return! loop state''
+            let state =
+                { state with decisions = Map.add s p state.decisions }
+                |> performPossibleCommands
+            
+            return! loop state
     }
 
     loop {

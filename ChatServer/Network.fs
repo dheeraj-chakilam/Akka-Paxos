@@ -79,7 +79,7 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                     printfn "Received a p1b"
                     leader <! P1b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, Set.empty )
                 
-                 | [| "p2a" ; br ; blid ; slot ; commandId ; commandMessage |] ->
+                 | [| "p2a" ; br ; blid ; slot ; commandId ; commandMessage ; commanderName|] ->
                     printfn "Received a p2a"
                     let pval = 
                         { 
@@ -87,14 +87,14 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                             slot = int64 slot
                             command = { id = int64 commandId ; message = commandMessage }
                         }
-                    acceptor <! P2A (mailbox.Self, pval)
+                    acceptor <! P2A (commanderName, mailbox.Self, pval)
                 
-                | [| "p2b" ;  "originalBallot" ; obr; obi; "updatedBallot" ; br ; blid ; slot |] -> 
+                | [| "p2b" ; br ; blid ; slot ; commanderName |] -> 
                     printfn "Received a p2b"
-                    leader <! P2b (mailbox.Self,
-                                  { round = int64 obr; leaderID = int64 obi },
-                                  { round = int64 br; leaderID = int64 blid },
-                                  int64 slot )
+                    leader <! P2b (commanderName,
+                                   mailbox.Self,
+                                   { round = int64 br; leaderID = int64 blid },
+                                   int64 slot )
                 
                 | [| "decision"; slot ; cid ; commandMessage |] ->
                     printfn "Received a decision"
@@ -138,10 +138,10 @@ let server replica acceptor leader serverType port selfID max (mailbox: Actor<ob
 
         match msg with
         | :? Tcp.Bound as bound ->
-            printf "Listening on %O\n" bound.LocalAddress
+            printf "Listening on %A\n" bound.LocalAddress
 
         | :? Tcp.Connected as connected -> 
-            printf "%O connected to the server as %O\n" connected.RemoteAddress serverType
+            printf "%A connected to the server as %A\n" connected.RemoteAddress serverType
             let handlerName = "handler_" + connected.RemoteAddress.ToString().Replace("[", "").Replace("]", "")
             let handlerRef = spawn mailbox handlerName (handler replica acceptor leader serverType selfID (Some sender))
             sender <! Tcp.Register handlerRef
