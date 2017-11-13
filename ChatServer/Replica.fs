@@ -13,13 +13,11 @@ type State = {
     leaders: Set<IActorRef>
     master: IActorRef option
     messages: List<Command>
-    beatmap: Map<string,IActorRef*int64>
 }
 
 type ReplicaMessage =
     | Join of IActorRef
     | JoinMaster of IActorRef
-    | Heartbeat of string * IActorRef * int64
     | Get
     | Request of Command
     /// Decision (Slot, Command)
@@ -63,20 +61,11 @@ let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
         let sender = mailbox.Sender()
 
         match msg with
-        | Join ref ->
-            mailbox.Context.System.Scheduler.ScheduleTellRepeatedly(System.TimeSpan.FromMilliseconds 0.,
-                                            System.TimeSpan.FromMilliseconds beatrate,
-                                            ref,
-                                            sprintf "heartbeat %i" selfID)
-            
+        | Join ref ->            
             return! loop { state with leaders = Set.add ref state.leaders }
 
         | JoinMaster ref ->
             return! loop { state with master = Some ref }
-
-        | Heartbeat (id, ref, ms) ->
-            //printfn "replica heartbeat %s" id
-            return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
 
         | Leave ref ->
             return! loop { state with leaders = Set.remove ref state.leaders }
@@ -125,7 +114,6 @@ let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
         leaders = Set.empty
         master = None
         messages = []
-        beatmap = Map.empty
         proposals = Map.empty
         decisions = Map.empty
         slotNum = 0L

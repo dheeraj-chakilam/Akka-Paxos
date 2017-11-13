@@ -6,6 +6,11 @@ open Commander
 open Scout
 open Types
 
+type LeaderCrash =
+    | AfterP1a of Set<int64>
+    | AfterP2a of Set<int64>
+    | AfterDecision of Set<int64>
+
 type LeaderState = {
     ballotNum: BallotNumber
     active: bool
@@ -14,7 +19,8 @@ type LeaderState = {
     replicas: Set<IActorRef>
     commanders: Map<string, IActorRef>
     scouts: Map<string, IActorRef>
-    beatmap: Map<string,IActorRef*int64>
+    refMap: Map<int64, IActorRef>
+    crash: LeaderCrash option
 }
 
 let pmax (pvals:Set<PValue>) =
@@ -24,26 +30,48 @@ let pmax (pvals:Set<PValue>) =
         | None -> Map.add pval.slot pval max) Map.empty pvals
     |> Map.map (fun slot pval -> pval.command)
 
+let crashRefs idSet state =
+    idSet
+    |> Set.toSeq
+    |> Seq.choose (fun id -> Map.tryFind id state.refMap)
+    |> Set.ofSeq
+
 let spawnCommander (mailbox: Actor<LeaderMessage>) selfID n slot command (state:LeaderState) =
     let commanderName = sprintf "commander-%i-%i-%i-%i-%i-%i" selfID state.ballotNum.leaderID state.ballotNum.round slot command.id (System.Random().Next())
+    let commanderCrash =
+        match state.crash with
+        | Some (AfterP2a idSet) ->
+            Some (CommanderCrash.AfterP2a (crashRefs idSet state))
+        | Some (AfterDecision idSet) ->
+            Some (CommanderCrash.AfterDecision (crashRefs idSet state))
+        | _ -> None
     let commanderRef =
-        spawn mailbox.Context.System commanderName (commander selfID commanderName n mailbox.Self state.acceptors state.replicas state.ballotNum slot command)
+        spawn mailbox.Context.System commanderName (commander selfID commanderName n mailbox.Self state.acceptors state.replicas state.ballotNum slot command commanderCrash)
     (commanderName, commanderRef)
 
 let spawnScout (mailbox: Actor<LeaderMessage>) selfID n (state:LeaderState) =
     let scoutName = sprintf "scout-%i-%i-%i" state.ballotNum.leaderID state.ballotNum.round (System.Random().Next())
+    let scoutCrash =
+        match state.crash with
+        | Some (AfterP1a idSet) ->
+            Some (ScoutCrash.AfterP1a (crashRefs idSet state))
+        | _ -> None
     let scoutRef =
-        spawn mailbox.Context.System scoutName (scout selfID scoutName n mailbox.Self state.acceptors state.ballotNum)
+        spawn mailbox.Context.System scoutName (scout selfID scoutName n mailbox.Self state.acceptors state.ballotNum scoutCrash)
     (scoutName, scoutRef)
 
-let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
+let leader (selfID: int64) n beatrate (mailbox: Actor<LeaderMessage>) =
     let rec loop (state:LeaderState) = actor {
         let! msg = mailbox.Receive()
         let sender = mailbox.Sender()
 
         match msg with
         | Join ref ->
-            printfn "Leader %i Received a Join from %A" selfID ref
+            // Start heartbeating (very slowly) just to get id, ref mappings
+            mailbox.Context.System.Scheduler.ScheduleTellRepeatedly(System.TimeSpan.FromMilliseconds 0.,
+                                            System.TimeSpan.FromMilliseconds beatrate,
+                                            ref,
+                                            sprintf "heartbeat %i" selfID)
             let state =
                 { state with acceptors = (Set.add ref state.acceptors) ; replicas = (Set.add ref state.replicas) }
             let state =
@@ -55,9 +83,9 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
                     state
             return! loop state
 
-        | Heartbeat (id, ref, ms) ->
+        | Heartbeat (id, ref) ->
             //printfn "leader heartbeat %s" id
-            return! loop { state with beatmap = state.beatmap |> Map.add id (ref,ms) }
+            return! loop { state with refMap = state.refMap |> Map.add id ref }
 
         | Leave ref ->
             return! loop { state with acceptors = Set.remove ref state.acceptors; replicas = Set.remove ref state.replicas }
@@ -130,6 +158,15 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
             | Some ref' -> ref' <! CommanderMessage.P2b (ref, b)
             | None -> printfn "ERROR: Found no commander for name: %s" name
             return! loop state
+        
+        | CrashP1a idSet ->
+            return! loop { state with crash = Some (AfterP1a idSet) }
+        
+        | CrashP2a idSet ->
+            return! loop { state with crash = Some (AfterP2a idSet) }
+        
+        | CrashDecision idSet ->
+            return! loop { state with crash = Some (AfterDecision idSet) }
     }
 
     loop {
@@ -139,6 +176,7 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
         replicas = Set.empty
         commanders = Map.empty
         scouts = Map.empty
-        beatmap = Map.empty
+        refMap = Map.empty
         proposals = Map.empty
+        crash = None
     }

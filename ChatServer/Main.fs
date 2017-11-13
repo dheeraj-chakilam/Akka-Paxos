@@ -6,7 +6,7 @@ open Acceptor
 open Leader
 open Network
 
-let beatrate = 1000.
+let beatrate = 5000.
 let aliveThreshold = 100L
 let timeout = 100L
 let exitDelay = 10
@@ -24,7 +24,7 @@ let main argv =
     | [|id; n; port|] ->
         let system = System.create "system" config
         let acceptorRef = spawn system "acceptor" (acceptor (int64 id))
-        let leaderRef = spawn system "leader" (leader (int64 id) (int n))
+        let leaderRef = spawn system "leader" (leader (int64 id) (int n) beatrate)
         let replicaRef = spawn system "replica" (replica (int64 id) beatrate)
         let serverRef = spawn system "server" (server replicaRef acceptorRef leaderRef ChatServer (20000 + int id) (int id) (int n))
         let mServerRef = spawn system "master-server" (server replicaRef acceptorRef leaderRef MasterServer (int port) (int id) (int n))

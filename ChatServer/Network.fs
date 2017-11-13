@@ -27,6 +27,11 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
         match connection with
                     | Some c -> c <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)
                     | None -> printf "Invalid request. (%A)\n" data
+    
+    let parseIdSet (idListString: string) =
+        idListString.Trim().Split([|' '|])
+        |> Set.ofArray
+        |> Set.map (fun id -> int64 id)
 
     let rec loop connection = actor {
         let! msg = mailbox.Receive()
@@ -40,8 +45,7 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
 
                 match data with
                 | [| "heartbeat" ; message |] ->
-                    replica <! ReplicaMessage.Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
-                    leader <! LeaderMessage.Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
+                    leader <! LeaderMessage.Heartbeat (int64 (message.Trim()), mailbox.Self)
 
                 | [| "quit" |] ->
                     replica <! ReplicaMessage.Leave mailbox.Self
@@ -143,14 +147,23 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                 | [| "crashAfterP2b" |] ->
                     acceptor <! CrashAfterP2b
 
+                | [| "crashP1a" |] ->
+                    leader <! CrashP1a Set.empty
+                
                 | [| "crashP1a" ; pList |] ->
-                    ()
+                    leader <! CrashP1a (parseIdSet pList)
+                
+                | [| "crashP2a" |] ->
+                    leader <! CrashP2a Set.empty
                 
                 | [| "crashP2a" ; pList |] ->
-                    ()
+                    leader <! CrashP2a (parseIdSet pList)
+                
+                | [| "crashDecision" |] ->
+                    leader <! CrashDecision Set.empty
                 
                 | [| "crashDecision" ; pList |] ->
-                    ()
+                    leader <! CrashP2a (parseIdSet pList)
 
                 | _ ->
                     sendInvalidReq data) lines

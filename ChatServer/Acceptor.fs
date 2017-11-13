@@ -39,6 +39,11 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                 |> Seq.map (fun pval -> sprintf "%i,%i,%i,%i,%s" pval.ballot.round pval.ballot.leaderID pval.slot pval.command.id pval.command.message)
                 |> String.concat "|"
             scoutRef <! (sprintf "p1b ballot %i %i pvalues %s %s" state.ballotNumber.round state.ballotNumber.leaderID acceptedString scoutName)
+
+            match state.crash with
+            | Some AfterP1b -> System.Environment.Exit(0)
+            | _ -> ()
+
             return! loop state
                 
         // TODO CODECHECK   
@@ -51,6 +56,11 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                     state
             // TODO: Fix sprintf
             commanderRef <! (sprintf "p2b %i %i %i %s" state.ballotNumber.round state.ballotNumber.leaderID p.slot commanderName)
+            
+            match state.crash with
+            | Some AfterP2b -> System.Environment.Exit(0)
+            | _ -> ()
+
             return! loop state
         
         | CrashAfterP1b ->
