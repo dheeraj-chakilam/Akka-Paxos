@@ -22,6 +22,12 @@ let sw =
     sw
 
 let handler replica acceptor leader serverType selfID connection (mailbox: Actor<obj>) =  
+
+    let sendInvalidReq data =
+        match connection with
+                    | Some c -> c <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)
+                    | None -> printf "Invalid request. (%A)\n" data
+
     let rec loop connection = actor {
         let! msg = mailbox.Receive()
 
@@ -30,10 +36,10 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
             //In case we receive multiple messages (delimited by a newline) in the same Tcp.Received message
             let lines = (Encoding.ASCII.GetString (received.Data.ToArray())).Trim().Split([|'\n'|])
             Array.iter (fun (line:string) ->
-                let data = line.Split([|' '|])
+                let data = line.Split([|' '|], 2)
 
                 match data with
-                | [| "heartbeat"; message |] ->
+                | [| "heartbeat" ; message |] ->
                     replica <! ReplicaMessage.Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
                     leader <! LeaderMessage.Heartbeat (message.Trim(), mailbox.Self, sw.ElapsedMilliseconds)
 
@@ -42,71 +48,112 @@ let handler replica acceptor leader serverType selfID connection (mailbox: Actor
                     leader <! LeaderMessage.Leave mailbox.Self
                     mailbox.Context.Stop mailbox.Self
 
-                | [| "msg"; messageID; message |] ->
-                    printfn "Received message: %s" message
-                    replica <! Request { id = int64 messageID ; message = message }
+                | [| "msg"; rest |] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| messageID; message |] ->
+                        //printfn "Received message: %s" message
+                        replica <! Request { id = int64 messageID ; message = message }
+                    | _ ->
+                        sendInvalidReq data
                 
                 | [| "get"; "chatLog" |] ->
-                    printfn "Recieved a get chatLog request"
+                    //printfn "Recieved a get chatLog request"
                     replica <! Get
             
-                | [| "propose"; slot ; cid ; commandMessage |] ->
-                    printfn "Received a propose: Slot %s, CID %s, message %s" slot cid commandMessage
-                    leader <! Propose (int64 slot, { id = int64 cid ; message = commandMessage })
+                | [| "propose"; rest |] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| slot ; cid ; commandMessage |] ->
+                        //printfn "Received a propose: Slot %s, CID %s, message %s" slot cid commandMessage
+                        leader <! Propose (int64 slot, { id = int64 cid ; message = commandMessage })
+                    | _ ->
+                        sendInvalidReq data
 
-                | [| "p1a" ; br ; blid |] ->
-                    printfn "Received a p1a"
-                    acceptor <! P1A (mailbox.Self, { round = int64 br; leaderID = int64 blid } )
 
-                | [| "p1b" ; "ballot" ; br ; blid ; "pvalues" ; acceptedString |] ->
-                    printfn "Received a p1b"
-                    let pvalues =
-                        acceptedString.Trim().Split([|'|'|])
-                        |> Array.fold (fun state pvalString ->
-                            match pvalString.Split([|','|]) with
-                            | [| ballotRound; ballotLeaderID; slot; commandId; commandMessage |] ->
-                                let pval =
-                                    {
-                                        ballot = { round = int64 ballotRound ; leaderID = int64 ballotLeaderID }
-                                        slot = int64 slot
-                                        command = { id = int64 commandId ; message = commandMessage }
-                                    }
-                                Set.add pval state
-                            | _ -> state) Set.empty
-                    leader <! P1b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, pvalues )
+                | [| "p1a" ; rest |] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| br ; blid ; scoutName |] ->
+                        //printfn "Received a p1a"
+                        acceptor <! P1A (scoutName, mailbox.Self, { round = int64 br; leaderID = int64 blid })
+                    | _ ->
+                        sendInvalidReq data
 
-                | [| "p1b" ; "ballot" ; br ; blid ; "pvalues" |] ->
-                    printfn "Received a p1b"
-                    leader <! P1b (mailbox.Self, { round = int64 br; leaderID = int64 blid }, Set.empty )
+                | [| "p1b" ; rest |] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| "ballot" ; br ; blid ; "pvalues" ; acceptedString ; scoutName |] ->
+                        //printfn "Received a p1b"
+                        let pvalues =
+                            acceptedString.Trim().Split([|'|'|])
+                            |> Array.fold (fun state pvalString ->
+                                match pvalString.Split([|','|]) with
+                                | [| ballotRound; ballotLeaderID; slot; commandId; commandMessage |] ->
+                                    let pval =
+                                        {
+                                            ballot = { round = int64 ballotRound ; leaderID = int64 ballotLeaderID }
+                                            slot = int64 slot
+                                            command = { id = int64 commandId ; message = commandMessage }
+                                        }
+                                    Set.add pval state
+                                | _ -> state) Set.empty
+                        leader <! P1b (scoutName, mailbox.Self, { round = int64 br; leaderID = int64 blid }, pvalues )
+                    | [| "ballot" ; br ; blid ; "pvalues" ; scoutName |] ->
+                        //printfn "Received a p1b"
+                        leader <! P1b (scoutName, mailbox.Self, { round = int64 br; leaderID = int64 blid }, Set.empty )
+                    | _ ->
+                        sendInvalidReq data
                 
-                 | [| "p2a" ; br ; blid ; slot ; commandId ; commandMessage ; commanderName|] ->
-                    printfn "Received a p2a"
-                    let pval = 
-                        { 
-                            ballot = { round = int64 br; leaderID = int64 blid }
-                            slot = int64 slot
-                            command = { id = int64 commandId ; message = commandMessage }
-                        }
-                    acceptor <! P2A (commanderName, mailbox.Self, pval)
+                | [| "p2a" ; rest|] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| br ; blid ; slot ; commandId ; commandMessage ; commanderName|] ->
+                        //printfn "Received a p2a"
+                        let pval = 
+                            { 
+                                ballot = { round = int64 br; leaderID = int64 blid }
+                                slot = int64 slot
+                                command = { id = int64 commandId ; message = commandMessage }
+                            }
+                        acceptor <! P2A (commanderName, mailbox.Self, pval)
+                    | _ ->
+                        sendInvalidReq data
                 
-                | [| "p2b" ; br ; blid ; slot ; commanderName |] -> 
-                    printfn "Received a p2b"
-                    leader <! P2b (commanderName,
-                                   mailbox.Self,
-                                   { round = int64 br; leaderID = int64 blid },
-                                   int64 slot )
+                | [| "p2b" ; rest |] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| br ; blid ; slot ; commanderName |] ->
+                        //printfn "Received a p2b"
+                        leader <! P2b (commanderName,
+                                       mailbox.Self,
+                                       { round = int64 br; leaderID = int64 blid },
+                                       int64 slot )
+                    | _ ->
+                        sendInvalidReq data
                 
-                | [| "decision"; slot ; cid ; commandMessage |] ->
-                    printfn "Received a decision"
-                    replica <! Decision (int64 slot, { id = int64 cid ; message = commandMessage })
-
+                | [| "decision"; rest |] ->
+                    match rest.Trim().Split([|' '|]) with
+                    | [| slot ; cid ; commandMessage |] ->
+                        //printfn "Received a decision"
+                        replica <! Decision (int64 slot, { id = int64 cid ; message = commandMessage })
+                    | _ ->
+                        sendInvalidReq data
+                
                 | [| "crash" |] ->
                     System.Environment.Exit(0)
 
+                | [| "crashAfterP1b" |] ->
+                    acceptor <! CrashAfterP1b
+
+                | [| "crashAfterP2b" |] ->
+                    acceptor <! CrashAfterP2b
+
+                | [| "crashP1a" ; pList |] ->
+                    ()
+                
+                | [| "crashP2a" ; pList |] ->
+                    ()
+                
+                | [| "crashDecision" ; pList |] ->
+                    ()
+
                 | _ ->
-                    match connection with
-                    | Some c -> c <! Tcp.Write.Create (ByteString.FromString <| sprintf "Invalid request. (%A)\n" data)
-                    | None -> printf "Invalid request. (%A)\n" data) lines
+                    sendInvalidReq data) lines
     
         | :? Tcp.ConnectionClosed as closed ->
             replica <! Leave mailbox.Self

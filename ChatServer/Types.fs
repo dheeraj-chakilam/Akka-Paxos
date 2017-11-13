@@ -13,7 +13,7 @@ type LeaderMessage =
     | Adopted of BallotNumber * Set<PValue>
     | Preempted of BallotNumber
     // To forward to the scout
-    | P1b of IActorRef * BallotNumber * Set<PValue>
+    | P1b of string * IActorRef * BallotNumber * Set<PValue>
     // To forward to the commander
     | P2b of string * IActorRef * BallotNumber * int64
     | Heartbeat of string * IActorRef * int64

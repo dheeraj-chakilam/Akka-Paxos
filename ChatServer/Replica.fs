@@ -27,7 +27,7 @@ type ReplicaMessage =
     | Leave of IActorRef
 
 let propose command state =
-    printfn "Trying to propose %A" command
+    printfn "Trying to propose %A with proposals: %A decisions: %A" command state.proposals state.decisions
     let rec findGap state i =
         if (Map.containsKey i state.proposals) || (Map.containsKey i state.decisions) then
             findGap state (i + 1L)
@@ -98,16 +98,19 @@ let replica (selfID: int64) beatrate (mailbox: Actor<ReplicaMessage>) =
         | Decision (s, p) ->
             printfn "Replica %i received a decision" selfID
             // Recursive function to Perform all possible commands (until gap)
-            let rec performPossibleCommands state = 
+            let rec performPossibleCommands state =
+                printfn "In performPossibleCommands"
                 match Map.tryFind state.slotNum state.decisions with
                 | Some p' ->
                     let state =
                         match Map.tryFind state.slotNum state.proposals with
                         | Some p'' when p'' <> p' ->
-                            propose p' state
-                            |> performPossibleCommands
-                        | _ -> state
-                    perform p' state
+                            propose p'' state
+                        | _ ->
+                            state
+                    state
+                    |> perform p'
+                    |> performPossibleCommands
                 | None ->
                     state
             

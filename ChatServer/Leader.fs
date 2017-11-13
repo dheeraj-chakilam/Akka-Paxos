@@ -13,7 +13,7 @@ type LeaderState = {
     acceptors: Set<IActorRef>
     replicas: Set<IActorRef>
     commanders: Map<string, IActorRef>
-    scouts: Map<BallotNumber, IActorRef>
+    scouts: Map<string, IActorRef>
     beatmap: Map<string,IActorRef*int64>
 }
 
@@ -25,13 +25,16 @@ let pmax (pvals:Set<PValue>) =
     |> Map.map (fun slot pval -> pval.command)
 
 let spawnCommander (mailbox: Actor<LeaderMessage>) selfID n slot command (state:LeaderState) =
-    let commanderName = sprintf "commander-%i-%i-%i-%i-%i" selfID state.ballotNum.leaderID state.ballotNum.round slot command.id
+    let commanderName = sprintf "commander-%i-%i-%i-%i-%i-%i" selfID state.ballotNum.leaderID state.ballotNum.round slot command.id (System.Random().Next())
     let commanderRef =
         spawn mailbox.Context.System commanderName (commander selfID commanderName n mailbox.Self state.acceptors state.replicas state.ballotNum slot command)
     (commanderName, commanderRef)
 
 let spawnScout (mailbox: Actor<LeaderMessage>) selfID n (state:LeaderState) =
-    spawn mailbox.Context.System (sprintf "scout-%i-%i" state.ballotNum.leaderID state.ballotNum.round) (scout selfID n mailbox.Self state.acceptors state.ballotNum)
+    let scoutName = sprintf "scout-%i-%i-%i" state.ballotNum.leaderID state.ballotNum.round (System.Random().Next())
+    let scoutRef =
+        spawn mailbox.Context.System scoutName (scout selfID scoutName n mailbox.Self state.acceptors state.ballotNum)
+    (scoutName, scoutRef)
 
 let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
     let rec loop (state:LeaderState) = actor {
@@ -46,8 +49,8 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
             let state =
                 if Set.count state.acceptors = (n / 2) + 1 then
                     printfn "Spawning a scout"
-                    let scoutRef = spawnScout mailbox selfID n state
-                    { state with scouts = Map.add state.ballotNum scoutRef state.scouts }
+                    let (scoutName, scoutRef) = spawnScout mailbox selfID n state
+                    { state with scouts = Map.add scoutName scoutRef state.scouts }
                 else
                     state
             return! loop state
@@ -102,20 +105,20 @@ let leader (selfID: int64) n (mailbox: Actor<LeaderMessage>) =
                 if ballot %> state.ballotNum then
                     //TODO: Backoff
                     let state' = { state with active = false ; ballotNum = { round = ballot.round + 1L ; leaderID = selfID } }
-                    let scoutRef =
+                    let (scoutName, scoutRef) =
                         //TODO: Ensure only one scout is spawned only once per ballot to ensure unique names
                         async {
                             do! Async.Sleep(System.Random().Next(7000))
                             return spawnScout mailbox selfID n state'
                         }
                         |> Async.RunSynchronously
-                    { state' with scouts = Map.add state'.ballotNum scoutRef state'.scouts }
+                    { state' with scouts = Map.add scoutName scoutRef state'.scouts }
                 else
                     state
             return! loop state
         
-        | P1b (ref, b, pvals) ->
-            match Map.tryFind b state.scouts with
+        | P1b (name, ref, b, pvals) ->
+            match Map.tryFind name state.scouts with
             | Some ref' -> ref' <! ScoutMessage.P1b (ref, b, pvals)
             | None -> printfn "ERROR: Found no scout for ballot %A" b
             return! loop state

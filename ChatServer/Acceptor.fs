@@ -4,14 +4,21 @@ open Akka.FSharp
 open Akka.Actor
 open Types
 
+type AcceptorCrash =
+    | AfterP1b
+    | AfterP2b
+
 type State = {
     ballotNumber: BallotNumber
     accepted: Set<PValue>
+    crash: AcceptorCrash option
 }
 
 type AcceptorMessage =
-    | P1A of IActorRef * BallotNumber
+    | P1A of string * IActorRef * BallotNumber
     | P2A of string * IActorRef * PValue
+    | CrashAfterP1b
+    | CrashAfterP2b
 
 let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
     let rec loop state = actor {
@@ -19,7 +26,7 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
         let sender = mailbox.Sender()
 
         match msg with
-        | P1A (scoutRef, b) -> 
+        | P1A (scoutName, scoutRef, b) -> 
             let state = 
                 if (b %> state.ballotNumber) then 
                     { state with ballotNumber = b }
@@ -31,7 +38,7 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
                 |> Set.toSeq
                 |> Seq.map (fun pval -> sprintf "%i,%i,%i,%i,%s" pval.ballot.round pval.ballot.leaderID pval.slot pval.command.id pval.command.message)
                 |> String.concat "|"
-            scoutRef <! (sprintf "p1b ballot %i %i pvalues %s" state.ballotNumber.round state.ballotNumber.leaderID acceptedString)
+            scoutRef <! (sprintf "p1b ballot %i %i pvalues %s %s" state.ballotNumber.round state.ballotNumber.leaderID acceptedString scoutName)
             return! loop state
                 
         // TODO CODECHECK   
@@ -45,7 +52,14 @@ let acceptor selfID (mailbox: Actor<AcceptorMessage>) =
             // TODO: Fix sprintf
             commanderRef <! (sprintf "p2b %i %i %i %s" state.ballotNumber.round state.ballotNumber.leaderID p.slot commanderName)
             return! loop state
+        
+        | CrashAfterP1b ->
+            return! loop { state with crash = Some AfterP1b }
+        
+        | CrashAfterP2b ->
+            return! loop { state with crash = Some AfterP2b }
     }
     loop {
         ballotNumber = { round = -1L; leaderID = -1L }
-        accepted = Set.empty }
+        accepted = Set.empty
+        crash = None }

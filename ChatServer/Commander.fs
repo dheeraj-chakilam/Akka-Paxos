@@ -37,7 +37,7 @@ let commander selfID selfName n leader acceptors replicas ballotNumber (slotNumb
             return! loop state
     }
 
-    printfn "Commander sending ballot %A" ballotNumber
+    printfn "Commander %s sending ballot %A" selfName ballotNumber
     Set.iter (fun r -> r <! sprintf "p2a %i %i %i %i %s %s" ballotNumber.round ballotNumber.leaderID slotNumber command.id command.message selfName) acceptors
 
     loop { beatmap = Map.empty ; waitfor = acceptors }
