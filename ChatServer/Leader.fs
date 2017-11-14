@@ -135,7 +135,7 @@ let leader (selfID: int64) n beatrate (mailbox: Actor<LeaderMessage>) =
                     let state' = { state with active = false ; ballotNum = { round = ballot.round + 1L ; leaderID = selfID } }
                     let (scoutName, scoutRef) =
                         async {
-                            do! Async.Sleep(System.Random().Next(1000))
+                            do! Async.Sleep(System.Random().Next(100))
                             return spawnScout mailbox selfID n state'
                         }
                         |> Async.RunSynchronously
